@@ -13,8 +13,7 @@ const homeRoutes: RouteObject[] = [
             {
                 index: true,
                 element: <Home />
-            }
-            // Add other home-related routes here
+            },
         ]
     }
 ];
