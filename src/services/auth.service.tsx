@@ -1,4 +1,4 @@
-import api from './api';
+import { authApi } from './api';
 import {
     LoginRequest,
     RegisterRequest,
@@ -25,14 +25,14 @@ const getRefreshToken = (): string | null => {
 const AuthService = {
     // Đăng nhập
     async login(loginRequest: LoginRequest): Promise<TokenResponse> {
-        const response = await api.post<TokenResponse>('/auth/login', loginRequest);
+        const response = await authApi.post<TokenResponse>('/auth/login', loginRequest);
         localStorage.setItem('accessToken', response.data.accessToken);
         return response.data;
     },
 
     // Đăng ký
     async register(registerRequest: RegisterRequest, otp?: string): Promise<RegisterResponse> {
-        const response = await api.post<RegisterResponse>(
+        const response = await authApi.post<RegisterResponse>(
             '/auth/register',
             registerRequest,
             { params: { otp } }
@@ -42,7 +42,7 @@ const AuthService = {
 
     // Gửi OTP
     async sendOtp(email: string): Promise<ApiResponse> {
-        const response = await api.post<ApiResponse>('/auth/send-otp', null, {
+        const response = await authApi.post<ApiResponse>('/auth/send-otp', null, {
             params: { email },
         });
         return response.data;
@@ -50,7 +50,7 @@ const AuthService = {
 
     // Xác thực OTP
     async verifyOtp(email: string, otp: string): Promise<boolean> {
-        const response = await api.post<boolean>('/auth/verify-otp', null, {
+        const response = await authApi.post<boolean>('/auth/verify-otp', null, {
             params: { email, otp },
         });
         return response.data;
@@ -58,13 +58,13 @@ const AuthService = {
 
     // Quên mật khẩu
     async forgotPassword(forgotPasswordRequest: ForgotPasswordRequest): Promise<ApiResponse> {
-        const response = await api.post<ApiResponse>('/auth/forgot-password', forgotPasswordRequest);
+        const response = await authApi.post<ApiResponse>('/auth/forgot-password', forgotPasswordRequest);
         return response.data;
     },
 
     // Reset mật khẩu
     async resetPassword(resetPasswordRequest: ResetPasswordRequest): Promise<ApiResponse> {
-        const response = await api.post<ApiResponse>('/auth/reset-password', resetPasswordRequest);
+        const response = await authApi.post<ApiResponse>('/auth/reset-password', resetPasswordRequest);
         return response.data;
     },
 
@@ -72,14 +72,14 @@ const AuthService = {
     async refreshToken(): Promise<TokenResponse> {
         const refreshToken = getRefreshToken();
         if (!refreshToken) throw new Error('No refresh token available');
-        const response = await api.post<TokenResponse>('/auth/refresh-token', {});
+        const response = await authApi.post<TokenResponse>('/auth/refresh-token', {});
         localStorage.setItem('accessToken', response.data.accessToken);
         return response.data;
     },
 
     // Đăng xuất
     async logout(): Promise<ApiResponse> {
-        const response = await api.post<ApiResponse>('/auth/logout', {});
+        const response = await authApi.post<ApiResponse>('/auth/logout', {});
         localStorage.removeItem('accessToken');
         document.cookie = 'refreshToken=; Max-Age=0; path=/;';
         return response.data;
@@ -87,25 +87,25 @@ const AuthService = {
 
     // Thay đổi mật khẩu không cần OTP
     async changePassword(changePasswordRequest: ChangePasswordRequest): Promise<ApiResponse> {
-        const response = await api.put<ApiResponse>('/auth/change-password', changePasswordRequest);
+        const response = await authApi.put<ApiResponse>('/auth/change-password', changePasswordRequest);
         return response.data;
     },
 
     // Thay đổi mật khẩu với OTP
     async changePasswordWithOtp(changePasswordRequest: ChangePasswordWithOtpRequest): Promise<ApiResponse> {
-        const response = await api.put<ApiResponse>('/auth/change-password-otp', changePasswordRequest);
+        const response = await authApi.put<ApiResponse>('/auth/change-password-otp', changePasswordRequest);
         return response.data;
     },
 
     // Lấy thông tin profile
     async getUserProfile(): Promise<UserProfile> {
-        const response = await api.get<UserProfile>('/auth/profile');
+        const response = await authApi.get<UserProfile>('/auth/profile');
         return response.data;
     },
 
     // Cập nhật profile
     async updateUserProfile(profile: UserProfile): Promise<UserProfile> {
-        const response = await api.put<UserProfile>('/auth/profile', profile);
+        const response = await authApi.put<UserProfile>('/auth/profile', profile);
         return response.data;
     },
 };

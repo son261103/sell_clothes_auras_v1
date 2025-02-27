@@ -1,10 +1,10 @@
-import React, { useState, useEffect, FormEvent, ChangeEvent } from 'react';
+import React, { useState, useEffect, FormEvent, ChangeEvent, useRef } from 'react';
 import { NavLink } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import Navbar from './Navbar';
 import useAuth from '../../hooks/useAuth';
 import { GiStarSwirl } from 'react-icons/gi';
-import { FiSearch, FiUser, FiHeart, FiShoppingBag, FiSun, FiMoon, FiMenu, FiX } from 'react-icons/fi';
+import { FiSearch, FiUser, FiHeart, FiShoppingBag, FiSun, FiMoon, FiMenu, FiX, FiMail } from 'react-icons/fi';
 
 interface HeaderProps {
     isDarkMode: boolean;
@@ -17,8 +17,25 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
     const [isSearchActive, setIsSearchActive] = useState(false);
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const searchRef = useRef<HTMLDivElement>(null);
+    const searchInputRef = useRef<HTMLInputElement>(null);
 
-    const { isAuthenticated, user, signOut } = useAuth();
+    const { isAuthenticated, user, signOut, getUserProfile, accessToken } = useAuth();
+
+    // Fetch user profile if we have token but no user data
+    useEffect(() => {
+        const fetchUserIfNeeded = async () => {
+            if (accessToken && (!user || !user.username)) {
+                try {
+                    await getUserProfile();
+                } catch (err) {
+                    console.error('Không thể lấy thông tin người dùng:', err);
+                }
+            }
+        };
+
+        fetchUserIfNeeded();
+    }, [accessToken, user, getUserProfile]);
 
     useEffect(() => {
         const handleScroll = () => {
@@ -42,10 +59,29 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isUserMenuOpen]);
 
+    useEffect(() => {
+        // Đóng tìm kiếm khi click ra ngoài
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as HTMLElement;
+            if (searchRef.current && !searchRef.current.contains(target) && isSearchActive) {
+                setIsSearchActive(false);
+            }
+        };
+
+        // Focus vào input khi mở tìm kiếm
+        if (isSearchActive && searchInputRef.current) {
+            searchInputRef.current.focus();
+        }
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [isSearchActive]);
+
     const handleSearch = (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (searchTerm.trim()) {
             toast.success(`Tìm kiếm: ${searchTerm}`);
+            // Thực hiện tìm kiếm ở đây
             setSearchTerm('');
             setIsSearchActive(false);
         } else {
@@ -127,38 +163,46 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                 <Navbar />
 
                 <div className="flex items-center space-x-2 md:space-x-3 z-50">
-                    {/* Search Button */}
-                    <button
-                        className="text-primary transition hover:text-accent p-1.5 rounded-full hover:bg-primary/10"
-                        onClick={() => setIsSearchActive(!isSearchActive)}
-                        aria-label={isSearchActive ? 'Đóng tìm kiếm' : 'Tìm kiếm'}
-                    >
-                        {isSearchActive ? (
-                            <FiX className="w-5 h-5" />
-                        ) : (
-                            <FiSearch className="w-5 h-5" />
-                        )}
-                    </button>
+                    {/* Search Component */}
+                    <div className="relative" ref={searchRef}>
+                        <button
+                            className="text-primary transition hover:text-accent p-1.5 rounded-full hover:bg-primary/10"
+                            onClick={() => setIsSearchActive(!isSearchActive)}
+                            aria-label={isSearchActive ? 'Đóng tìm kiếm' : 'Tìm kiếm'}
+                        >
+                            {isSearchActive ? (
+                                <FiX className="w-5 h-5" />
+                            ) : (
+                                <FiSearch className="w-5 h-5" />
+                            )}
+                        </button>
 
-                    {/* Wishlist */}
-                    <NavLink
-                        to="/wishlist"
-                        className={({ isActive }) =>
-                            `text-primary transition hidden sm:block relative p-1.5 rounded-full hover:bg-primary/10 hover:text-accent ${isActive ? 'text-primary/80' : ''}`
-                        }
-                        aria-label="Yêu thích"
-                    >
-                        {({ isActive }) => (
-                            <div className="relative">
-                                <FiHeart className="w-5 h-5" />
-                                <span
-                                    className={`absolute bottom-0 left-0 right-0 h-[2px] bg-primary transition-all duration-300 ${
-                                        isActive ? 'w-full' : 'w-0'
-                                    }`}
-                                ></span>
+                        {/* Desktop Search Dropdown */}
+                        <div
+                            className={`absolute right-0 mt-2 w-72 md:w-80 origin-top-right transition-all duration-300 transform z-50 bg-white dark:bg-darkBackground shadow-lg rounded-md overflow-hidden
+                            ${isSearchActive ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}
+                        >
+                            <form onSubmit={handleSearch} className="flex items-center border-b dark:border-gray-700">
+                                <input
+                                    ref={searchInputRef}
+                                    type="text"
+                                    value={searchTerm}
+                                    onChange={(e: ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
+                                    placeholder="Tìm kiếm sản phẩm..."
+                                    className="w-full px-4 py-3 bg-transparent dark:text-textLight border-0 focus:outline-none focus:ring-0 text-sm"
+                                />
+                                <button
+                                    type="submit"
+                                    className="px-4 py-3 text-primary hover:text-accent transition"
+                                >
+                                    <FiSearch className="w-5 h-5" />
+                                </button>
+                            </form>
+                            <div className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400">
+                                Tìm kiếm phổ biến: Áo, Váy, Quần
                             </div>
-                        )}
-                    </NavLink>
+                        </div>
+                    </div>
 
                     {/* Cart */}
                     <NavLink
@@ -204,28 +248,33 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                             aria-label="Tài khoản"
                         >
                             <FiUser className="w-5 h-5" />
-                            {isAuthenticated && (
+                            {isAuthenticated && user && (
                                 <span className="hidden sm:inline text-sm font-medium ml-1">
                                     {user?.username || 'User'}
                                 </span>
                             )}
                         </button>
 
-                        {/* User Menu Dropdown - Đã di chuyển ra ngoài cùng */}
+                        {/* User Menu Dropdown */}
                         <div
                             className={`absolute right-0 mt-2 origin-top-right transition-all duration-300 transform z-50 bg-white dark:bg-darkBackground shadow-lg rounded-md overflow-hidden
                             ${isUserMenuOpen
                                 ? 'opacity-100 scale-100'
                                 : 'opacity-0 scale-95 pointer-events-none'}`}
-                            style={{width: '200px'}}
+                            style={{width: '220px'}}
                         >
                             <div className="py-2">
-                                {isAuthenticated ? (
+                                {isAuthenticated && user ? (
                                     <>
                                         <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
                                             <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
                                                 Xin chào, {user?.username || 'User'}
                                             </p>
+                                            {user?.email && (
+                                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center">
+                                                    <FiMail className="w-3 h-3 mr-1" /> {user.email}
+                                                </p>
+                                            )}
                                         </div>
                                         <NavLink
                                             to="/profile"
@@ -295,16 +344,39 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                     </button>
                 </div>
 
+                {/* Mobile Search Form */}
+                <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                    <form onSubmit={handleSearch} className="flex items-center bg-gray-100 dark:bg-secondary/20 rounded-full overflow-hidden">
+                        <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={(e: ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
+                            placeholder="Tìm kiếm sản phẩm..."
+                            className="w-full px-4 py-2 bg-transparent dark:text-textLight border-0 focus:outline-none focus:ring-0 text-sm"
+                        />
+                        <button type="submit" className="px-3 py-2 text-primary hover:text-accent transition">
+                            <FiSearch className="w-5 h-5" />
+                        </button>
+                    </form>
+                </div>
+
                 <div className="p-4">
                     <Navbar isMobile onLinkClick={() => setIsMenuOpen(false)} />
                 </div>
 
                 <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-                    {isAuthenticated ? (
+                    {isAuthenticated && user ? (
                         <>
-                            <div className="flex items-center space-x-2 py-2 px-2 text-sm text-primary mb-2">
-                                <FiUser className="w-4 h-4" />
-                                <span>Xin chào, {user?.username || 'User'}</span>
+                            <div className="py-2 px-2 text-primary mb-2">
+                                <div className="flex items-center space-x-2 text-sm">
+                                    <FiUser className="w-4 h-4" />
+                                    <span>Xin chào, {user?.username || 'User'}</span>
+                                </div>
+                                {user?.email && (
+                                    <div className="flex items-center text-xs text-gray-500 dark:text-gray-400 mt-1.5 ml-6">
+                                        <FiMail className="w-3 h-3 mr-1" /> {user.email}
+                                    </div>
+                                )}
                             </div>
                             <NavLink
                                 to="/profile"
@@ -338,14 +410,6 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                     ) : (
                         <div className="space-y-2">
                             <NavLink
-                                to="/wishlist"
-                                className="flex items-center space-x-2 py-2 px-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 rounded mb-2 sm:hidden"
-                                onClick={() => setIsMenuOpen(false)}
-                            >
-                                <FiHeart className="w-4 h-4" />
-                                <span>Danh sách yêu thích</span>
-                            </NavLink>
-                            <NavLink
                                 to="/login"
                                 className="w-full p-2.5 bg-primary text-white rounded-md hover:bg-opacity-90 transition block text-center mb-2"
                                 onClick={() => setIsMenuOpen(false)}
@@ -361,33 +425,6 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                             </NavLink>
                         </div>
                     )}
-                </div>
-            </div>
-
-            {/* Search Form Overlay - Đã tách ra để sửa lại */}
-            <div
-                className={`fixed inset-0 bg-black bg-opacity-30 z-40 flex items-start justify-center pt-16 transition-opacity duration-300 ${
-                    isSearchActive ? 'opacity-100' : 'opacity-0 pointer-events-none'
-                }`}
-                onClick={() => setIsSearchActive(false)}
-            >
-                <div
-                    className="w-full max-w-md px-4"
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    <form onSubmit={handleSearch} className="flex items-center bg-white dark:bg-secondary/90 rounded-full overflow-hidden shadow-lg">
-                        <input
-                            type="text"
-                            value={searchTerm}
-                            onChange={(e: ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
-                            placeholder="Tìm kiếm sản phẩm..."
-                            className="w-full px-4 py-3 bg-transparent dark:text-textLight border-0 focus:outline-none focus:ring-0 text-sm"
-                            autoFocus={isSearchActive}
-                        />
-                        <button type="submit" className="px-4 py-3 text-primary hover:text-accent transition">
-                            <FiSearch className="w-5 h-5" />
-                        </button>
-                    </form>
                 </div>
             </div>
         </header>
