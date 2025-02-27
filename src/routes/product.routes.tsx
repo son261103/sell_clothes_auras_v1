@@ -1,7 +1,7 @@
 import { RouteObject } from 'react-router-dom';
 import MainLayout from '../layouts/MainLayout';
-import ProductsPage from '../pages/ProductsPage';
-import ProductDetailPage from '../pages/ProductDetailPage';
+import ProductsPage from '../pages/product/ProductsPage.tsx';
+import ProductDetailPage from '../pages/product/ProductDetailPage.tsx';
 
 /**
  * Product related routes

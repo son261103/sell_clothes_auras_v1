@@ -5,6 +5,16 @@ export interface LoginRequest {
     rememberMe: boolean;
 }
 
+// types/auth.types.ts
+export interface UserProfile {
+    userId: number;
+    username: string;
+    email: string;
+    fullName: string;
+    roles: string[];
+    permissions: string[];
+}
+
 export interface RegisterRequest {
     username: string;
     email: string;
@@ -23,10 +33,6 @@ export interface ResetPasswordRequest {
     otp: string;
     newPassword: string;
     confirmPassword: string;
-}
-
-export interface RefreshTokenRequest {
-    refreshToken: string;
 }
 
 export interface ChangePasswordRequest {

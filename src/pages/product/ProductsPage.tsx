@@ -1,13 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
-import useProduct from '../hooks/useProduct';
-import ProductGrid from '../components/products/ProductGrid';
-import ProductFilters from '../components/products/ProductFilters';
-import ProductSorting from '../components/products/ProductSorting';
-import ProductPagination from '../components/products/ProductPagination';
-import LoadingSpinner from '../components/common/LoadingSpinner';
-import EmptyState from '../components/common/EmptyState';
+import useProduct from '../../hooks/useProduct.tsx';
+import ProductGrid from '../../components/products/ProductGrid.tsx';
+import ProductFilters from '../../components/products/ProductFilters.tsx';
+import ProductSorting from '../../components/products/ProductSorting.tsx';
+import ProductPagination from '../../components/products/ProductPagination.tsx';
+import LoadingSpinner from '../../components/common/LoadingSpinner.tsx';
+import EmptyState from '../../components/common/EmptyState.tsx';
 import { FiFilter } from 'react-icons/fi';
 
 const ProductsPage: React.FC = () => {

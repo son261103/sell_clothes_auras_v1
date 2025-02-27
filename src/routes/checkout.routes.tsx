@@ -1,6 +1,6 @@
 import { RouteObject } from 'react-router-dom';
 import MainLayout from '../layouts/MainLayout';
-import CheckoutPage from '../pages/CheckoutPage';
+import CheckoutPage from '../pages/cart/CheckoutPage.tsx';
 
 /**
  * Checkout related routes

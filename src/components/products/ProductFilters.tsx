@@ -3,6 +3,7 @@ import { FiChevronDown } from 'react-icons/fi';
 import { useSelector } from 'react-redux';
 import { selectCategories, selectBrands } from '../../redux/selectors/productSelectors';
 
+// Updated ProductFiltersProps interface to include isMobile and onClose
 interface ProductFiltersProps {
     selectedCategory: number | null;
     selectedBrand: number | null;
@@ -17,6 +18,8 @@ interface ProductFiltersProps {
         maxPrice?: number | null;
     }) => void;
     onResetFilters: () => void;
+    isMobile?: boolean; // Added optional isMobile prop
+    onClose?: () => void; // Added optional onClose prop
 }
 
 const FilterSection: React.FC<{ title: string; children: React.ReactNode; defaultOpen?: boolean }> = ({
@@ -92,6 +95,8 @@ const ProductFilters: React.FC<ProductFiltersProps> = ({
                                                            priceRange,
                                                            onFilterChange,
                                                            onResetFilters,
+                                                           isMobile, // Added to props destructuring
+                                                           onClose, // Added to props destructuring
                                                        }) => {
     const categories = useSelector(selectCategories);
     const brands = useSelector(selectBrands);
@@ -128,12 +133,22 @@ const ProductFilters: React.FC<ProductFiltersProps> = ({
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white">Bộ lọc</h3>
-                <button
-                    onClick={onResetFilters}
-                    className="text-xs text-primary dark:text-accent hover:underline transition-colors duration-200"
-                >
-                    Xóa tất cả
-                </button>
+                <div className="flex gap-2">
+                    {isMobile && onClose && (
+                        <button
+                            onClick={onClose}
+                            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors duration-200"
+                        >
+                            Đóng
+                        </button>
+                    )}
+                    <button
+                        onClick={onResetFilters}
+                        className="text-xs text-primary dark:text-accent hover:underline transition-colors duration-200"
+                    >
+                        Xóa tất cả
+                    </button>
+                </div>
             </div>
 
             {/* Categories */}
@@ -194,17 +209,9 @@ const ProductFilters: React.FC<ProductFiltersProps> = ({
             <FilterSection title="Khoảng giá">
                 <div className="space-y-3">
                     <div className="flex items-center gap-2">
-                        <PriceRangeInput
-                            value={minPrice}
-                            onChange={setMinPrice}
-                            placeholder="Từ"
-                        />
+                        <PriceRangeInput value={minPrice} onChange={setMinPrice} placeholder="Từ" />
                         <span className="text-gray-500 dark:text-gray-400">-</span>
-                        <PriceRangeInput
-                            value={maxPrice}
-                            onChange={setMaxPrice}
-                            placeholder="Đến"
-                        />
+                        <PriceRangeInput value={maxPrice} onChange={setMaxPrice} placeholder="Đến" />
                     </div>
                     {(minPrice || maxPrice) && (
                         <button

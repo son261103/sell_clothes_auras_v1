@@ -1,10 +1,13 @@
-import React, { useState, useEffect, FormEvent, ChangeEvent, useRef } from 'react';
+import React, { useEffect, useState, FormEvent, ChangeEvent, useRef } from 'react';
 import { NavLink } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import Navbar from './Navbar';
 import useAuth from '../../hooks/useAuth';
+import useCart from '../../hooks/useCart';
 import { GiStarSwirl } from 'react-icons/gi';
 import { FiSearch, FiUser, FiHeart, FiShoppingBag, FiSun, FiMoon, FiMenu, FiX, FiMail } from 'react-icons/fi';
+import { AxiosError } from 'axios';
+import { ApiResponse } from '../../types/auth.types';
 
 interface HeaderProps {
     isDarkMode: boolean;
@@ -21,58 +24,59 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
     const searchInputRef = useRef<HTMLInputElement>(null);
 
     const { isAuthenticated, user, signOut, getUserProfile, accessToken } = useAuth();
+    const { itemCount } = useCart();
 
-    // Fetch user profile if we have token but no user data
     useEffect(() => {
         const fetchUserIfNeeded = async () => {
             if (accessToken && (!user || !user.username)) {
                 try {
                     await getUserProfile();
+                    console.log('User profile fetched successfully');
                 } catch (err) {
-                    console.error('Không thể lấy thông tin người dùng:', err);
+                    const axiosError = err as AxiosError<ApiResponse>;
+                    console.error('Không thể lấy thông tin người dùng:', axiosError);
+                    if (axiosError.response?.status === 401) {
+                        toast.error('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
+                        await signOut();
+                    } else if (axiosError.response?.status === 400) {
+                        toast.error(axiosError.response?.data?.message || 'Yêu cầu không hợp lệ.');
+                    } else {
+                        toast.error('Không thể tải thông tin người dùng.');
+                    }
                 }
             }
         };
 
         fetchUserIfNeeded();
-    }, [accessToken, user, getUserProfile]);
+    }, [accessToken, getUserProfile, signOut]);
 
     useEffect(() => {
-        const handleScroll = () => {
-            setIsScrolled(window.scrollY > 50);
-        };
-
+        const handleScroll = () => setIsScrolled(window.scrollY > 50);
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
     useEffect(() => {
-        // Đóng menu người dùng khi click ra ngoài
         const handleClickOutside = (event: MouseEvent) => {
             const target = event.target as HTMLElement;
             if (!target.closest('.user-menu-container') && isUserMenuOpen) {
                 setIsUserMenuOpen(false);
             }
         };
-
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isUserMenuOpen]);
 
     useEffect(() => {
-        // Đóng tìm kiếm khi click ra ngoài
         const handleClickOutside = (event: MouseEvent) => {
             const target = event.target as HTMLElement;
             if (searchRef.current && !searchRef.current.contains(target) && isSearchActive) {
                 setIsSearchActive(false);
             }
         };
-
-        // Focus vào input khi mở tìm kiếm
         if (isSearchActive && searchInputRef.current) {
             searchInputRef.current.focus();
         }
-
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isSearchActive]);
@@ -81,7 +85,6 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         e.preventDefault();
         if (searchTerm.trim()) {
             toast.success(`Tìm kiếm: ${searchTerm}`);
-            // Thực hiện tìm kiếm ở đây
             setSearchTerm('');
             setIsSearchActive(false);
         } else {
@@ -128,11 +131,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                     onClick={() => setIsMenuOpen(!isMenuOpen)}
                     aria-label={isMenuOpen ? 'Đóng menu' : 'Mở menu'}
                 >
-                    {isMenuOpen ? (
-                        <FiX className="w-5 h-5" />
-                    ) : (
-                        <FiMenu className="w-5 h-5" />
-                    )}
+                    {isMenuOpen ? <FiX className="w-5 h-5" /> : <FiMenu className="w-5 h-5" />}
                 </button>
 
                 <div className="flex items-center">
@@ -163,24 +162,18 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                 <Navbar />
 
                 <div className="flex items-center space-x-2 md:space-x-3 z-50">
-                    {/* Search Component */}
                     <div className="relative" ref={searchRef}>
                         <button
                             className="text-primary transition hover:text-accent p-1.5 rounded-full hover:bg-primary/10"
                             onClick={() => setIsSearchActive(!isSearchActive)}
                             aria-label={isSearchActive ? 'Đóng tìm kiếm' : 'Tìm kiếm'}
                         >
-                            {isSearchActive ? (
-                                <FiX className="w-5 h-5" />
-                            ) : (
-                                <FiSearch className="w-5 h-5" />
-                            )}
+                            {isSearchActive ? <FiX className="w-5 h-5" /> : <FiSearch className="w-5 h-5" />}
                         </button>
-
-                        {/* Desktop Search Dropdown */}
                         <div
-                            className={`absolute right-0 mt-2 w-72 md:w-80 origin-top-right transition-all duration-300 transform z-50 bg-white dark:bg-darkBackground shadow-lg rounded-md overflow-hidden
-                            ${isSearchActive ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}
+                            className={`absolute right-0 mt-2 w-72 md:w-80 origin-top-right transition-all duration-300 transform z-50 bg-white dark:bg-darkBackground shadow-lg rounded-md overflow-hidden ${
+                                isSearchActive ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
+                            }`}
                         >
                             <form onSubmit={handleSearch} className="flex items-center border-b dark:border-gray-700">
                                 <input
@@ -191,10 +184,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                                     placeholder="Tìm kiếm sản phẩm..."
                                     className="w-full px-4 py-3 bg-transparent dark:text-textLight border-0 focus:outline-none focus:ring-0 text-sm"
                                 />
-                                <button
-                                    type="submit"
-                                    className="px-4 py-3 text-primary hover:text-accent transition"
-                                >
+                                <button type="submit" className="px-4 py-3 text-primary hover:text-accent transition">
                                     <FiSearch className="w-5 h-5" />
                                 </button>
                             </form>
@@ -204,7 +194,6 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                         </div>
                     </div>
 
-                    {/* Cart */}
                     <NavLink
                         to="/cart"
                         className={({ isActive }) =>
@@ -215,9 +204,11 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                         {({ isActive }) => (
                             <div className="relative">
                                 <FiShoppingBag className="w-5 h-5" />
-                                <span className="absolute -top-1 -right-1 bg-accent text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-medium">
-                                    3
-                                </span>
+                                {itemCount > 0 && (
+                                    <span className="absolute -top-1 -right-1 bg-accent text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-medium">
+                                        {itemCount}
+                                    </span>
+                                )}
                                 <span
                                     className={`absolute bottom-0 left-0 right-0 h-[2px] bg-primary transition-all duration-300 ${
                                         isActive ? 'w-full' : 'w-0'
@@ -227,20 +218,14 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                         )}
                     </NavLink>
 
-                    {/* Theme Toggle */}
                     <button
                         onClick={toggleTheme}
                         className="text-primary transition hover:text-accent p-1.5 rounded-full hover:bg-primary/10"
                         aria-label={isDarkMode ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối'}
                     >
-                        {isDarkMode ? (
-                            <FiSun className="w-5 h-5" />
-                        ) : (
-                            <FiMoon className="w-5 h-5" />
-                        )}
+                        {isDarkMode ? <FiSun className="w-5 h-5" /> : <FiMoon className="w-5 h-5" />}
                     </button>
 
-                    {/* User Section */}
                     <div className="relative user-menu-container">
                         <button
                             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
@@ -254,14 +239,11 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                                 </span>
                             )}
                         </button>
-
-                        {/* User Menu Dropdown */}
                         <div
-                            className={`absolute right-0 mt-2 origin-top-right transition-all duration-300 transform z-50 bg-white dark:bg-darkBackground shadow-lg rounded-md overflow-hidden
-                            ${isUserMenuOpen
-                                ? 'opacity-100 scale-100'
-                                : 'opacity-0 scale-95 pointer-events-none'}`}
-                            style={{width: '220px'}}
+                            className={`absolute right-0 mt-2 origin-top-right transition-all duration-300 transform z-50 bg-white dark:bg-darkBackground shadow-lg rounded-md overflow-hidden ${
+                                isUserMenuOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
+                            }`}
+                            style={{ width: '220px' }}
                         >
                             <div className="py-2">
                                 {isAuthenticated && user ? (
@@ -321,7 +303,6 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                 </div>
             </div>
 
-            {/* Mobile menu */}
             <div
                 className={`md:hidden fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity duration-300 ${
                     isMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -344,7 +325,6 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                     </button>
                 </div>
 
-                {/* Mobile Search Form */}
                 <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
                     <form onSubmit={handleSearch} className="flex items-center bg-gray-100 dark:bg-secondary/20 rounded-full overflow-hidden">
                         <input

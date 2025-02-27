@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import OrderSummary from '../components/checkout/OrderSummary';
+import OrderSummary from '../../components/checkout/OrderSummary.tsx';
 import 'aos/dist/aos.css';
 import AOS from 'aos';
 import { toast } from 'react-hot-toast';

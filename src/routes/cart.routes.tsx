@@ -1,6 +1,6 @@
 import { RouteObject } from 'react-router-dom';
 import MainLayout from '../layouts/MainLayout';
-import CartPage from '../pages/CartPage';
+import CartPage from '../pages/cart/CartPage.tsx';
 
 /**
  * Cart related routes

@@ -1,30 +1,52 @@
+import { createSelector } from '@reduxjs/toolkit';
 import { RootState } from '../store';
-import { UserProfile } from '../../types/auth.types';
 
-// Selector để lấy trạng thái xác thực
-export const selectIsAuthenticated = (state: RootState): boolean =>
-    state.auth.isAuthenticated;
+// Basic selectors
+export const selectAuthState = (state: RootState) => state.auth;
 
-// Selector để lấy thông tin user
-export const selectUser = (state: RootState): UserProfile | null =>
-    state.auth.user;
+// Memoized selectors using createSelector
+export const selectIsAuthenticated = createSelector(
+    [selectAuthState],
+    (auth) => auth.isAuthenticated
+);
 
-// Selector để lấy access token
-export const selectAccessToken = (state: RootState): string | null =>
-    state.auth.accessToken;
+export const selectUser = createSelector(
+    [selectAuthState],
+    (auth) => auth.user
+);
 
-// Selector để lấy trạng thái loading
-export const selectLoading = (state: RootState): boolean =>
-    state.auth.loading;
+export const selectAccessToken = createSelector(
+    [selectAuthState],
+    (auth) => auth.accessToken
+);
 
-// Selector để lấy lỗi
-export const selectError = (state: RootState): string | null =>
-    state.auth.error;
+export const selectLoading = createSelector(
+    [selectAuthState],
+    (auth) => auth.loading
+);
 
-// Selector để lấy roles của user
-export const selectUserRoles = (state: RootState): string[] =>
-    state.auth.user?.roles || [];
+export const selectError = createSelector(
+    [selectAuthState],
+    (auth) => auth.error
+);
 
-// Selector để lấy permissions của user
-export const selectUserPermissions = (state: RootState): string[] =>
-    state.auth.user?.permissions || [];
+// Memoized selectors for arrays to prevent unnecessary rerenders
+export const selectUserRoles = createSelector(
+    [selectUser],
+    (user) => user?.roles || []
+);
+
+export const selectUserPermissions = createSelector(
+    [selectUser],
+    (user) => user?.permissions || []
+);
+
+// New memoized selector for the auth object used in ProductDetailPage
+export const selectAuth = createSelector(
+    [selectAuthState],
+    (auth) => ({
+        isAuthenticated: auth.isAuthenticated || false,
+        userId: auth.user?.userId,
+        accessToken: auth.accessToken
+    })
+);
