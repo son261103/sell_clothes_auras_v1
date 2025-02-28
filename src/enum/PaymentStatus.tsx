@@ -1,14 +1,21 @@
-// PaymentStatus.ts
+/**
+ * Enum for payment status
+ */
 export enum PaymentStatus {
-    PENDING = 'PENDING',
-    COMPLETED = 'COMPLETED',
-    FAILED = 'FAILED',
-    REFUNDED = 'REFUNDED'
+    PENDING = "PENDING",
+    COMPLETED = "COMPLETED",
+    FAILED = "FAILED",
+    REFUNDED = "REFUNDED",
 }
 
-export const PAYMENT_STATUS_DESCRIPTIONS: Record<PaymentStatus, string> = {
-    [PaymentStatus.PENDING]: 'Chờ thanh toán',
-    [PaymentStatus.COMPLETED]: 'Đã hoàn thành',
-    [PaymentStatus.FAILED]: 'Thất bại',
-    [PaymentStatus.REFUNDED]: 'Đã hoàn tiền'
-};
+/**
+ * Enum for payment history status
+ * Giả định các giá trị dựa trên thông lệ, vì file Enums.Status.PaymentHistoryStatus không được cung cấp chi tiết
+ */
+export enum PaymentHistoryStatus {
+    INITIATED = "INITIATED",      // Khởi tạo
+    PROCESSING = "PROCESSING",    // Đang xử lý
+    SUCCEEDED = "SUCCEEDED",      // Thành công
+    FAILED = "FAILED",            // Thất bại
+    CANCELLED = "CANCELLED",      // Đã hủy
+}

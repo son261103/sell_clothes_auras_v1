@@ -14,9 +14,12 @@ export interface OrderStatusDescription {
 
 export interface CreateOrderDTO {
     addressId: number;
-    selectedVariantIds?: number[]; // Optional: only specific variants
-    shippingMethodId?: number;
-    totalWeight?: number;
+    shippingMethodId: number; // Bắt buộc vì backend yêu cầu
+    totalAmount: number; // Thêm trường bắt buộc
+    paymentMethodId?: number; // Tùy chọn, nếu backend cần
+    note?: string; // Tùy chọn, ghi chú đơn hàng
+    selectedVariantIds?: number[]; // Giữ nguyên
+    totalWeight?: number; // Giữ nguyên
 }
 
 export interface CancelOrderDTO {

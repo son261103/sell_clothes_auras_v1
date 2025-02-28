@@ -1,10 +1,10 @@
-// File: pages/order/OrderPage.tsx
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useCart from '../../hooks/useCart';
 import useOrder from '../../hooks/useOrder';
 import useUserAddress from '../../hooks/useUserAddress';
 import useShipping from '../../hooks/useShipping';
+import usePaymentMethod from '../../hooks/usePaymentMethod';
 import useAuth from '../../hooks/useAuth';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import EmptyState from '../../components/common/EmptyState';
@@ -13,7 +13,7 @@ import 'aos/dist/aos.css';
 import AOS from 'aos';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiChevronLeft, FiPlus, FiTruck, FiPackage, FiMap, FiMessageSquare } from 'react-icons/fi';
+import { FiChevronLeft, FiPlus, FiTruck, FiPackage, FiMap, FiMessageSquare, FiCreditCard } from 'react-icons/fi';
 import { AddressResponseDTO } from '../../types/user.address.types';
 
 // Import Components
@@ -23,6 +23,7 @@ import OrderSummary from '../../components/order/OrderSummary';
 import OrderPreview from '../../components/order/OrderPreview';
 import AddressForm from '../../components/order/AddressForm';
 import ShippingMethodForm from '../../components/order/ShippingMethodForm';
+import PaymentMethodForm from '../../components/payment/PaymentMethodForm';
 
 // Animation variants for sections
 const containerVariants = {
@@ -45,7 +46,6 @@ const itemVariants = {
     }
 };
 
-// Main component
 const OrderPage: React.FC = () => {
     const navigate = useNavigate();
     const [isInitialized, setIsInitialized] = useState(false);
@@ -62,11 +62,13 @@ const OrderPage: React.FC = () => {
         setAsDefaultAddress
     } = useUserAddress();
     const { shippingMethods, getAllShippingMethods, loading: shippingLoading } = useShipping();
+    const { paymentMethods, getActivePaymentMethods, loading: paymentMethodLoading } = usePaymentMethod();
 
     const [showAddressModal, setShowAddressModal] = useState(false);
     const [showAddressListModal, setShowAddressListModal] = useState(false);
     const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
     const [showShippingModal, setShowShippingModal] = useState(false);
+    const [showPaymentMethodModal, setShowPaymentMethodModal] = useState(false);
     const [showOrderConfirmModal, setShowOrderConfirmModal] = useState(false);
     const [shippingFee, setShippingFee] = useState(0);
     const [processingOrder, setProcessingOrder] = useState(false);
@@ -74,11 +76,13 @@ const OrderPage: React.FC = () => {
     const [addressToEdit, setAddressToEdit] = useState<AddressResponseDTO | undefined>(undefined);
     const [addressToDelete, setAddressToDelete] = useState<number | null>(null);
     const [selectedShippingMethodId, setSelectedShippingMethodId] = useState<number | null>(null);
+    const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<number | null>(null);
     const [orderNote, setOrderNote] = useState('');
     const [hasFetchedAddresses, setHasFetchedAddresses] = useState(false);
 
     const selectedAddress = addresses.find(addr => addr.addressId === selectedAddressId);
     const selectedShippingMethod = shippingMethods.find(method => method.id === selectedShippingMethodId);
+    const selectedPaymentMethod = paymentMethods.find(method => method.methodId === selectedPaymentMethodId);
 
     useEffect(() => {
         AOS.init({
@@ -89,7 +93,7 @@ const OrderPage: React.FC = () => {
         });
     }, []);
 
-    // Lấy dữ liệu địa chỉ chỉ khi chưa fetch
+    // Lấy dữ liệu địa chỉ
     useEffect(() => {
         if (isAuthenticated && user?.userId && !hasFetchedAddresses && !addressLoading) {
             const fetchAddresses = async () => {
@@ -134,14 +138,36 @@ const OrderPage: React.FC = () => {
             setSelectedShippingMethodId(defaultMethod.id);
             setShippingFee(defaultMethod.baseFee);
         }
-    }, [shippingMethods, selectedShippingMethodId, totalPrice]);
+    }, [shippingMethods, selectedShippingMethodId]);
 
     // Cập nhật phí vận chuyển khi thay đổi phương thức
     useEffect(() => {
         if (selectedShippingMethod) {
             setShippingFee(selectedShippingMethod.baseFee);
         }
-    }, [selectedShippingMethod, totalPrice]);
+    }, [selectedShippingMethod]);
+
+    // Lấy danh sách phương thức thanh toán
+    useEffect(() => {
+        const fetchPaymentMethods = async () => {
+            try {
+                await getActivePaymentMethods();
+            } catch (error) {
+                console.error('Error fetching payment methods:', error);
+                toast.error('Không thể tải danh sách phương thức thanh toán');
+            }
+        };
+        if (!paymentMethods.length && !paymentMethodLoading) {
+            fetchPaymentMethods();
+        }
+    }, [getActivePaymentMethods, paymentMethods, paymentMethodLoading]);
+
+    // Chọn phương thức thanh toán mặc định
+    useEffect(() => {
+        if (paymentMethods.length > 0 && !selectedPaymentMethodId) {
+            setSelectedPaymentMethodId(paymentMethods[0].methodId);
+        }
+    }, [paymentMethods, selectedPaymentMethodId]);
 
     // Lấy dữ liệu giỏ hàng
     useEffect(() => {
@@ -174,16 +200,27 @@ const OrderPage: React.FC = () => {
             toast.error('Vui lòng chọn phương thức vận chuyển');
             return;
         }
+        if (!selectedPaymentMethodId) {
+            toast.error('Vui lòng chọn phương thức thanh toán');
+            return;
+        }
         setShowOrderConfirmModal(true);
     };
 
     const handleCreateOrder = async () => {
         setShowOrderConfirmModal(false);
 
-        if (!selectedAddressId || !selectedShippingMethodId) {
-            toast.error('Vui lòng chọn địa chỉ và phương thức vận chuyển');
+        if (!selectedAddressId || !selectedShippingMethodId || !selectedPaymentMethodId) {
+            toast.error('Vui lòng chọn đầy đủ địa chỉ, phương thức vận chuyển và thanh toán');
             return;
         }
+
+        if (totalPrice === undefined || shippingFee === undefined) {
+            toast.error('Không thể tính tổng tiền đơn hàng');
+            return;
+        }
+
+        const totalAmount = totalPrice + shippingFee;
 
         setProcessingOrder(true);
         try {
@@ -191,10 +228,18 @@ const OrderPage: React.FC = () => {
                 addressId: selectedAddressId,
                 shippingMethodId: selectedShippingMethodId,
                 note: orderNote.trim() || undefined,
+                totalAmount: totalAmount, // Thêm totalAmount vào orderData
+                paymentMethodId: selectedPaymentMethodId // Thêm paymentMethodId
             };
             const createdOrder = await createOrder(orderData);
             toast.success('Đơn hàng đã được tạo thành công!');
-            navigate(`/payment/${createdOrder.orderId}`);
+            navigate(`/payment/${createdOrder.orderId}`, {
+                state: {
+                    orderId: createdOrder.orderId,
+                    totalAmount: totalAmount,
+                    paymentMethodId: selectedPaymentMethodId
+                }
+            });
         } catch (error) {
             console.error('Error creating order:', error);
             toast.error('Không thể tạo đơn hàng. Vui lòng thử lại sau.');
@@ -269,9 +314,18 @@ const OrderPage: React.FC = () => {
         setSelectedShippingMethodId(methodId);
     };
 
+    const handleSelectPaymentMethod = (methodId: number) => {
+        setSelectedPaymentMethodId(methodId);
+    };
+
+    const handlePaymentMethodSuccess = () => {
+        setShowPaymentMethodModal(false);
+        toast.success('Đã chọn phương thức thanh toán!');
+    };
+
     const validCartItems = cartItems.filter(item => item && item.itemId && item.productName);
 
-    if ((cartLoading || addressLoading || shippingLoading) && !isInitialized) {
+    if ((cartLoading || addressLoading || shippingLoading || paymentMethodLoading) && !isInitialized) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-lightBackground dark:bg-darkBackground">
                 <motion.div
@@ -474,6 +528,67 @@ const OrderPage: React.FC = () => {
                                 )}
                             </motion.div>
 
+                            {/* Phương thức thanh toán */}
+                            <motion.div
+                                variants={itemVariants}
+                                className="bg-white dark:bg-gray-800 rounded-lg border border-primary/10 dark:border-primary/20 p-6 shadow-sm hover:shadow-md transition-shadow duration-300"
+                                data-aos="fade-up"
+                                data-aos-delay="150"
+                            >
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 items-center">
+                                    <div className="flex items-center">
+                                        <div className="bg-primary/10 p-2 rounded-full mr-3">
+                                            <FiCreditCard className="w-5 h-5 text-primary" />
+                                        </div>
+                                        <h2 className="text-xl font-bold text-textDark dark:text-textLight">Phương thức thanh toán</h2>
+                                    </div>
+                                    <div className="flex justify-end">
+                                        <button
+                                            className="text-primary hover:text-primary/80 text-sm font-medium flex items-center bg-primary/5 px-3 py-1.5 rounded-full transition-colors duration-200"
+                                            onClick={() => setShowPaymentMethodModal(true)}
+                                        >
+                                            <FiCreditCard className="mr-1" /> Chọn phương thức
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {selectedPaymentMethod ? (
+                                    <motion.div
+                                        initial={{ opacity: 0, scale: 0.9 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        className="p-4 bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded-lg"
+                                    >
+                                        <div className="flex items-center justify-between gap-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="bg-primary/20 p-2 rounded-full flex-shrink-0">
+                                                    <FiCreditCard className="w-6 h-6 text-primary" />
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-medium text-textDark dark:text-textLight text-lg">{selectedPaymentMethod.name}</span>
+                                                    <span className="text-sm text-secondary/70 dark:text-textLight/70">• {selectedPaymentMethod.code}</span>
+                                                </div>
+                                            </div>
+                                            <span className="inline-block text-sm bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-2 py-1 rounded-full">
+                                                {selectedPaymentMethod.status ? 'Hoạt động' : 'Bảo trì'}
+                                            </span>
+                                        </div>
+                                    </motion.div>
+                                ) : (
+                                    <div className="text-center py-8 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                        <div className="mb-4">
+                                            <FiCreditCard className="w-10 h-10 text-primary mx-auto" />
+                                        </div>
+                                        <p className="text-grey-600 dark:text-grey-300 mb-4 text-sm">Vui lòng chọn phương thức thanh toán.</p>
+                                        <button
+                                            className="px-4 py-2 bg-primary text-white rounded-full hover:bg-primary/90 transition-colors duration-200 text-sm font-medium"
+                                            onClick={() => setShowPaymentMethodModal(true)}
+                                        >
+                                            <FiCreditCard className="inline mr-1" /> Chọn phương thức thanh toán
+                                        </button>
+                                    </div>
+                                )}
+                            </motion.div>
+
                             {/* Ghi chú đơn hàng */}
                             <motion.div
                                 variants={itemVariants}
@@ -537,6 +652,7 @@ const OrderPage: React.FC = () => {
                                     address={selectedAddress || null}
                                     orderNote={orderNote}
                                     shippingMethod={selectedShippingMethod || null}
+                                    paymentMethod={selectedPaymentMethod || null}
                                 />
                             </motion.div>
                             <motion.div
@@ -682,7 +798,7 @@ const OrderPage: React.FC = () => {
                 isOpen={showOrderConfirmModal}
                 title="Xác nhận đặt hàng"
                 message={`Bạn có chắc chắn muốn đặt đơn hàng với tổng giá trị ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalPrice + shippingFee)}?`}
-                confirmText="Đặt hàng ngay"
+                confirmText="Đặt hàng và thanh toán"
                 cancelText="Hủy"
                 type="success"
                 onConfirm={handleCreateOrder}
@@ -713,6 +829,36 @@ const OrderPage: React.FC = () => {
                                 onSelect={handleSelectShippingMethod}
                                 onCancel={() => setShowShippingModal(false)}
                                 onSuccess={handleShippingMethodSuccess}
+                            />
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Phương thức thanh toán modal */}
+            <AnimatePresence>
+                {showPaymentMethodModal && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+                        onClick={(e) => e.target === e.currentTarget && setShowPaymentMethodModal(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, y: 20, opacity: 0 }}
+                            animate={{ scale: 1, y: 0, opacity: 1 }}
+                            exit={{ scale: 0.9, y: 20, opacity: 0 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                            className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-2xl shadow-lg m-4"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <PaymentMethodForm
+                                paymentMethods={paymentMethods}
+                                selectedMethodId={selectedPaymentMethodId}
+                                onSelect={handleSelectPaymentMethod}
+                                onCancel={() => setShowPaymentMethodModal(false)}
+                                onSuccess={handlePaymentMethodSuccess}
                             />
                         </motion.div>
                     </motion.div>
