@@ -7,7 +7,7 @@ import EmptyState from '../../components/common/EmptyState';
 import 'aos/dist/aos.css';
 import AOS from 'aos';
 import { toast } from 'react-hot-toast';
-import { FiMinus, FiPlus, FiTrash2, FiChevronLeft, FiShoppingBag } from 'react-icons/fi';
+import { FiMinus, FiPlus, FiTrash2, FiChevronLeft, FiShoppingBag, FiPackage, FiShield, FiTruck } from 'react-icons/fi';
 import { CartItemDTO, CartUpdateQuantityDTO } from '../../types/cart.types';
 
 interface CartItemProps {
@@ -30,30 +30,13 @@ const CartItem: React.FC<CartItemProps> = ({ item, onQuantityChange, onRemove })
     const { itemId, quantity, productName, imageUrl, unitPrice, color, size, sku, stockQuantity } = item;
     const fallbackImage = 'https://placehold.co/400x400/e2e8f0/1e293b?text=No+Image';
 
-    console.log('CartItem data:', {
-        itemId,
-        productName,
-        imageUrl,
-        price: unitPrice || 0,
-        color,
-        size,
-        sku,
-        stockQuantity,
-        quantity,
-        totalPrice: item.totalPrice
-    });
-
     const displayName = productName || 'Sản phẩm không xác định';
     const price = unitPrice || 0;
     const displayImage = imageUrl || fallbackImage;
 
-    if (!productName && !imageUrl) {
-        console.warn('Missing product data for item:', item);
-    }
-
     return (
-        <div className="flex flex-col sm:flex-row border border-primary/10 dark:border-primary/20 rounded-lg p-4 bg-white dark:bg-gray-800 shadow-sm">
-            <div className="flex-shrink-0 w-full sm:w-40 h-40 mb-4 sm:mb-0 sm:mr-6">
+        <div className="flex flex-col sm:flex-row border border-primary/10 dark:border-primary/20 rounded-lg p-4 bg-white dark:bg-gray-800 shadow-sm transition-all duration-200 hover:shadow-md">
+            <div className="flex-shrink-0 w-full sm:w-36 h-36 mb-4 sm:mb-0 sm:mr-6">
                 <div className="w-full h-full relative rounded-md overflow-hidden">
                     <img
                         src={displayImage}
@@ -61,7 +44,6 @@ const CartItem: React.FC<CartItemProps> = ({ item, onQuantityChange, onRemove })
                         className="w-full h-full object-cover"
                         onError={(e) => {
                             (e.target as HTMLImageElement).src = fallbackImage;
-                            console.error('Image load failed for:', displayName);
                         }}
                     />
                     {displayImage === fallbackImage && (
@@ -74,32 +56,37 @@ const CartItem: React.FC<CartItemProps> = ({ item, onQuantityChange, onRemove })
                     <div>
                         <h3 className="text-lg font-medium text-textDark dark:text-textLight">{displayName}</h3>
                         <div className="mt-1 text-sm text-secondary/70 dark:text-textLight/70">
-                            {color && <p>Màu: {color}</p>}
-                            {size && <p>Kích thước: {size}</p>}
-                            {sku && <p>SKU: {sku}</p>}
+                            {color && <p className="inline-block mr-4">Màu: {color}</p>}
+                            {size && <p className="inline-block mr-4">Kích thước: {size}</p>}
+                            {sku && <p className="inline-block">SKU: {sku}</p>}
                             {!color && !size && !sku && (
                                 <p className="text-red-500 dark:text-red-400">Thông tin biến thể không đầy đủ</p>
                             )}
                         </div>
+                        {stockQuantity && stockQuantity <= 5 && (
+                            <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">
+                                Chỉ còn {stockQuantity} sản phẩm
+                            </p>
+                        )}
                     </div>
                     <div className="mt-4 flex flex-col sm:flex-row justify-between items-start sm:items-center">
                         <div className="flex items-center mb-4 sm:mb-0">
                             <button
                                 onClick={() => onQuantityChange(itemId, quantity - 1)}
                                 disabled={quantity <= 1}
-                                className="p-1 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                                className="p-2 rounded-full border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
                                 aria-label="Decrease quantity"
                             >
-                                <FiMinus className="w-4 h-4" />
+                                <FiMinus className="w-3 h-3" />
                             </button>
                             <span className="mx-3 w-8 text-center text-textDark dark:text-textLight">{quantity}</span>
                             <button
                                 onClick={() => onQuantityChange(itemId, quantity + 1)}
                                 disabled={quantity >= (stockQuantity || 1)}
-                                className="p-1 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                                className="p-2 rounded-full border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
                                 aria-label="Increase quantity"
                             >
-                                <FiPlus className="w-4 h-4" />
+                                <FiPlus className="w-3 h-3" />
                             </button>
                         </div>
                         <div className="flex items-center justify-between w-full sm:w-auto">
@@ -118,6 +105,56 @@ const CartItem: React.FC<CartItemProps> = ({ item, onQuantityChange, onRemove })
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    );
+};
+
+const OrderSummary: React.FC<{
+    itemCount: number;
+    totalPrice: number;
+    onCheckout: () => void;
+}> = ({ itemCount, totalPrice, onCheckout }) => {
+    return (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-primary/10 dark:border-primary/20 p-6 shadow-sm">
+            <h2 className="text-xl font-bold text-textDark dark:text-textLight mb-4">Tóm tắt đơn hàng</h2>
+
+            <div className="space-y-3 mb-6">
+                <div className="flex justify-between">
+                    <span className="text-secondary/70 dark:text-textLight/70">Tổng số sản phẩm:</span>
+                    <span className="text-textDark dark:text-textLight">{itemCount}</span>
+                </div>
+                <div className="flex justify-between border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
+                    <span className="text-lg font-medium text-textDark dark:text-textLight">Tổng cộng:</span>
+                    <span className="text-xl font-bold text-primary">
+            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalPrice || 0)}
+          </span>
+                </div>
+            </div>
+
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
+                <ul className="space-y-2 mb-6">
+                    <li className="flex items-start">
+                        <FiTruck className="w-5 h-5 text-primary mr-2 mt-0.5" />
+                        <span className="text-sm text-gray-600 dark:text-gray-300">Giao hàng miễn phí cho đơn hàng trên 500.000₫</span>
+                    </li>
+                    <li className="flex items-start">
+                        <FiShield className="w-5 h-5 text-primary mr-2 mt-0.5" />
+                        <span className="text-sm text-gray-600 dark:text-gray-300">Bảo đảm chất lượng sản phẩm</span>
+                    </li>
+                    <li className="flex items-start">
+                        <FiPackage className="w-5 h-5 text-primary mr-2 mt-0.5" />
+                        <span className="text-sm text-gray-600 dark:text-gray-300">Đổi trả trong vòng 7 ngày</span>
+                    </li>
+                </ul>
+
+                <button
+                    onClick={onCheckout}
+                    className="w-full bg-primary text-white py-3 rounded-full hover:bg-primary/90 transition duration-300 shadow-sm flex items-center justify-center"
+                >
+                    <span className="mr-2">Tiến hành đặt hàng</span>
+                    <FiChevronLeft className="w-5 h-5 transform rotate-180" />
+                </button>
             </div>
         </div>
     );
@@ -154,21 +191,7 @@ const CartPage: React.FC = () => {
             try {
                 clearCartError();
                 await getUserCart();
-                console.log("Cart data fetched successfully:", cartItems);
-                cartItems.forEach(item => {
-                    console.log("Cart item details:", {
-                        itemId: item?.itemId,
-                        productName: item?.productName,
-                        imageUrl: item?.imageUrl,
-                        price: item?.unitPrice,
-                        color: item?.color,
-                        size: item?.size,
-                        sku: item?.sku,
-                        stockQuantity: item?.stockQuantity,
-                        quantity: item?.quantity,
-                        totalPrice: item?.totalPrice
-                    });
-                });
+                console.log("Cart data fetched successfully");
             } catch (error) {
                 console.error('Error fetching cart data:', error);
                 toast.error('Không thể tải dữ liệu giỏ hàng');
@@ -219,7 +242,7 @@ const CartPage: React.FC = () => {
             toast.error('Giỏ hàng của bạn đang trống!');
             return;
         }
-        navigate('/checkout');
+        navigate('/order');
     };
 
     if (loading && !isInitialized) {
@@ -264,14 +287,14 @@ const CartPage: React.FC = () => {
         );
     }
 
-    // Updated filter to match flat CartItemDTO structure
+    // Filter valid cart items
     const validCartItems = cartItems.filter(item => item && item.itemId && item.productName);
 
     return (
         <div className="min-h-screen bg-lightBackground dark:bg-darkBackground">
             <div className="max-w-7xl mx-auto px-4 sm:px-8 py-6">
-                <section data-aos="fade-down">
-                    <div className="flex items-center justify-between mb-6">
+                <section>
+                    <div className="flex items-center justify-between mb-6" data-aos="fade-down">
                         <h1 className="text-3xl font-bold text-primary tracking-tight">Giỏ Hàng</h1>
                         <button
                             onClick={() => navigate('/products')}
@@ -305,54 +328,36 @@ const CartPage: React.FC = () => {
                         </div>
                     ) : (
                         !loading && (
-                            <div className="space-y-6">
-                                {validCartItems.map((item, index) => (
-                                    <div
-                                        key={`cart-item-${item.itemId}`}
-                                        data-aos="fade-up"
-                                        data-aos-delay={index * 100}
-                                    >
-                                        <CartItem
-                                            item={item}
-                                            onQuantityChange={handleQuantityChange}
-                                            onRemove={handleRemoveItem}
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                {/* Cart Items */}
+                                <div className="lg:col-span-2">
+                                    <div className="space-y-4">
+                                        {validCartItems.map((item, index) => (
+                                            <div
+                                                key={`cart-item-${item.itemId}`}
+                                                data-aos="fade-up"
+                                                data-aos-delay={index * 50}
+                                            >
+                                                <CartItem
+                                                    item={item}
+                                                    onQuantityChange={handleQuantityChange}
+                                                    onRemove={handleRemoveItem}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Order Summary */}
+                                <div className="lg:col-span-1" data-aos="fade-left">
+                                    <div className="sticky top-6">
+                                        <OrderSummary
+                                            itemCount={itemCount}
+                                            totalPrice={totalPrice}
+                                            onCheckout={handleCheckout}
                                         />
                                     </div>
-                                ))}
-                                {validCartItems.length > 0 && (
-                                    <div className="border-t border-primary/10 dark:border-primary/20 pt-4">
-                                        <div
-                                            className="flex flex-col sm:flex-row justify-between items-center gap-4"
-                                            data-aos="fade-up"
-                                            data-aos-delay="200"
-                                        >
-                                            <div className="flex flex-col w-full sm:w-auto">
-                                                <span className="text-sm text-secondary/70 dark:text-textLight/70 mb-1">
-                                                    Tổng số sản phẩm: {itemCount}
-                                                </span>
-                                                <span className="text-lg font-medium text-textDark dark:text-textLight">
-                                                    Tổng cộng:
-                                                </span>
-                                            </div>
-                                            <span className="text-xl font-bold text-primary">
-                                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalPrice || 0)}
-                                            </span>
-                                        </div>
-                                        <div
-                                            className="flex justify-end mt-4"
-                                            data-aos="fade-up"
-                                            data-aos-delay="300"
-                                        >
-                                            <button
-                                                className="bg-primary text-white px-8 py-3 rounded-full hover:bg-primary/90 transition duration-300 shadow-sm flex items-center"
-                                                onClick={handleCheckout}
-                                            >
-                                                <span className="mr-2">Thanh Toán</span>
-                                                <FiChevronLeft className="w-5 h-5 transform rotate-180" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
+                                </div>
                             </div>
                         )
                     )}

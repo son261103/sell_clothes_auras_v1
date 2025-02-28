@@ -5,6 +5,7 @@ import checkoutRoutes from './checkout.routes';
 import authRoutes from './auth.routes';
 import productRoutes from "./product.routes.tsx";
 import React from "react";
+import orderRoutes from "./order.routes.tsx";
 
 interface AppRoutesProps {
     isDarkMode: boolean;
@@ -16,6 +17,7 @@ const AppRoutes = ({isDarkMode, setIsDarkMode}: AppRoutesProps) => {
         ...homeRoutes,
         ...productRoutes,
         ...cartRoutes,
+        ...orderRoutes,
         ...checkoutRoutes,
         ...authRoutes.map((route) => ({
             ...route,

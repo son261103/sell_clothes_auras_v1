@@ -115,7 +115,7 @@ const ProductsPage: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-300">
+        <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-secondary dark:text-gray-100 transition-colors duration-300">
             {/* Main Content with Enhanced Background */}
             <div className="container mx-auto px-4 py-4">
                 <div className="bg-white dark:bg-gray-800 shadow-xl rounded-xl overflow-hidden transition-all duration-300">

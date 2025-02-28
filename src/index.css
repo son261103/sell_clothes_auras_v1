@@ -1,3 +1,41 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Custom scrollbar styles */
+.scrollbar-thin {
+    scrollbar-width: thin; /* Firefox */
+}
+
+.scrollbar-thumb-primary\/50::-webkit-scrollbar-thumb {
+    background-color: rgba(59, 130, 246, 0.5); /* Màu primary/50 */
+    border-radius: 6px;
+}
+
+.scrollbar-track-gray-100::-webkit-scrollbar-track {
+    background-color: #f3f4f6; /* Màu gray-100 */
+}
+
+.scrollbar-track-gray-800::-webkit-scrollbar-track {
+    background-color: #1f2937; /* Màu gray-800 */
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+    width: 8px; /* Độ rộng thanh cuộn */
+    height: 8px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+    border-radius: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+    border-radius: 6px;
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+    .scrollbar-track-gray-100::-webkit-scrollbar-track {
+        background-color: #1f2937;
+    }
+}
