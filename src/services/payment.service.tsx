@@ -3,6 +3,9 @@ import { PaymentRequestDTO, PaymentResponseDTO, PaymentHistoryDTO } from '../typ
 import { ApiResponse } from '../types';
 import { AxiosError } from 'axios';
 
+let lastConfirmRequestTime = 0;
+const DEBOUNCE_INTERVAL = 2000;
+
 /**
  * Service for managing user payments
  */
@@ -109,13 +112,22 @@ const PaymentService = {
      */
     async confirmPayment(vnpayParams: Record<string, string>): Promise<ApiResponse> {
         try {
+            // Implement debounce to prevent multiple rapid requests
+            const now = Date.now();
+            if (now - lastConfirmRequestTime < DEBOUNCE_INTERVAL) {
+                console.log('Payment confirmation request throttled');
+                throw new Error('Yêu cầu đang được xử lý, vui lòng đợi');
+            }
+
+            lastConfirmRequestTime = now;
+
             const response = await api.get<ApiResponse>('/public/payment/confirm', {
                 params: vnpayParams
             });
             return response.data;
         } catch (error) {
             console.error('Error confirming payment:', error);
-            throw error;
+            throw error instanceof Error ? error : new Error('Lỗi xác nhận thanh toán');
         }
     }
 };
