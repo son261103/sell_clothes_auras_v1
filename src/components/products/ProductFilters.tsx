@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { FiChevronDown } from 'react-icons/fi';
 import { useSelector } from 'react-redux';
 import { selectCategories, selectBrands } from '../../redux/selectors/productSelectors';
+import { motion } from 'framer-motion';
 
-// Updated ProductFiltersProps interface to include isMobile and onClose
+// Updated ProductFiltersProps interface with improved typing
 interface ProductFiltersProps {
     selectedCategory: number | null;
     selectedBrand: number | null;
@@ -18,8 +19,8 @@ interface ProductFiltersProps {
         maxPrice?: number | null;
     }) => void;
     onResetFilters: () => void;
-    isMobile?: boolean; // Added optional isMobile prop
-    onClose?: () => void; // Added optional onClose prop
+    isMobile?: boolean;
+    onClose?: () => void;
 }
 
 const FilterSection: React.FC<{ title: string; children: React.ReactNode; defaultOpen?: boolean }> = ({
@@ -30,7 +31,12 @@ const FilterSection: React.FC<{ title: string; children: React.ReactNode; defaul
     const [isOpen, setIsOpen] = useState(defaultOpen);
 
     return (
-        <div className="mb-4">
+        <motion.div
+            className="mb-4"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+        >
             <button
                 className="flex items-center justify-between w-full text-sm font-semibold text-gray-800 dark:text-gray-100 hover:text-primary dark:hover:text-accent transition-colors duration-200"
                 onClick={() => setIsOpen(!isOpen)}
@@ -47,7 +53,7 @@ const FilterSection: React.FC<{ title: string; children: React.ReactNode; defaul
             >
                 {children}
             </div>
-        </div>
+        </motion.div>
     );
 };
 
@@ -95,8 +101,8 @@ const ProductFilters: React.FC<ProductFiltersProps> = ({
                                                            priceRange,
                                                            onFilterChange,
                                                            onResetFilters,
-                                                           isMobile, // Added to props destructuring
-                                                           onClose, // Added to props destructuring
+                                                           isMobile,
+                                                           onClose,
                                                        }) => {
     const categories = useSelector(selectCategories);
     const brands = useSelector(selectBrands);
@@ -130,7 +136,12 @@ const ProductFilters: React.FC<ProductFiltersProps> = ({
     };
 
     return (
-        <div className="space-y-6">
+        <motion.div
+            className="space-y-6"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.5 }}
+        >
             <div className="flex items-center justify-between">
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white">Bộ lọc</h3>
                 <div className="flex gap-2">
@@ -153,14 +164,14 @@ const ProductFilters: React.FC<ProductFiltersProps> = ({
 
             {/* Categories */}
             <FilterSection title="Danh mục">
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
                     {categories && categories.length > 0 ? (
                         categories.map((category) => (
                             <div key={category.categoryId} className="flex items-center">
                                 <input
                                     id={`category-${category.categoryId}`}
                                     type="checkbox"
-                                    className="h-4 w-4 text-primary border-gray-300 rounded focus:ring-2 focus:ring-primary dark:focus:ring-accent"
+                                    className="h-4 w-4 text-primary border-gray-300 rounded focus:ring-2 focus:ring-primary dark:focus:ring-accent transition-colors duration-200"
                                     checked={selectedCategory === category.categoryId}
                                     onChange={() => handleCategoryChange(category.categoryId)}
                                 />
@@ -180,14 +191,14 @@ const ProductFilters: React.FC<ProductFiltersProps> = ({
 
             {/* Brands */}
             <FilterSection title="Thương hiệu">
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
                     {brands && brands.length > 0 ? (
                         brands.map((brand) => (
                             <div key={brand.brandId} className="flex items-center">
                                 <input
                                     id={`brand-${brand.brandId}`}
                                     type="checkbox"
-                                    className="h-4 w-4 text-primary border-gray-300 rounded focus:ring-2 focus:ring-primary dark:focus:ring-accent"
+                                    className="h-4 w-4 text-primary border-gray-300 rounded focus:ring-2 focus:ring-primary dark:focus:ring-accent transition-colors duration-200"
                                     checked={selectedBrand === brand.brandId}
                                     onChange={() => handleBrandChange(brand.brandId)}
                                 />
@@ -227,8 +238,48 @@ const ProductFilters: React.FC<ProductFiltersProps> = ({
                     )}
                 </div>
             </FilterSection>
-        </div>
+
+            {/* Apply Filters Button for Mobile */}
+            {isMobile && (
+                <motion.div
+                    className="pt-4 border-t border-gray-200 dark:border-gray-700"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                >
+                    <button
+                        onClick={onClose}
+                        className="w-full bg-primary hover:bg-primary/90 text-white py-2 rounded-lg font-medium transition-colors duration-200"
+                    >
+                        Áp dụng bộ lọc
+                    </button>
+                </motion.div>
+            )}
+        </motion.div>
     );
 };
+
+// Add custom scrollbar styles
+const styleElement = document.createElement('style');
+styleElement.textContent = `
+.custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+}
+`;
+document.head.appendChild(styleElement);
 
 export default ProductFilters;

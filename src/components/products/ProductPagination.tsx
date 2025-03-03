@@ -1,5 +1,6 @@
 import React from 'react';
 import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { motion } from 'framer-motion';
 
 interface ProductPaginationProps {
     currentPage: number;
@@ -48,73 +49,98 @@ const ProductPagination: React.FC<ProductPaginationProps> = ({
         return result;
     };
 
+    // Animation variants
+    const containerVariants = {
+        hidden: { opacity: 0 },
+        visible: {
+            opacity: 1,
+            transition: {
+                staggerChildren: 0.05
+            }
+        }
+    };
+
+    const itemVariants = {
+        hidden: { opacity: 0, y: 5 },
+        visible: {
+            opacity: 1,
+            y: 0,
+            transition: { duration: 0.3 }
+        }
+    };
+
     return (
-        <nav className="flex justify-center">
-            <ul className="flex items-center">
+        <motion.nav
+            className="flex justify-center"
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+        >
+            <motion.ul className="flex items-center">
                 {/* Previous page button */}
-                <li>
+                <motion.li variants={itemVariants}>
                     <button
                         onClick={() => onPageChange(currentPage - 1)}
                         disabled={currentPage === 0}
-                        className={`flex items-center justify-center w-10 h-10 rounded-md mr-2 ${
+                        className={`flex items-center justify-center w-10 h-10 rounded-md mr-2 transition-colors duration-200 ${
                             currentPage === 0
                                 ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
-                                : 'text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20'
+                                : 'text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-primary/20'
                         }`}
                         aria-label="Previous page"
                     >
                         <FiChevronLeft className="w-5 h-5" />
                     </button>
-                </li>
+                </motion.li>
 
                 {/* Page numbers */}
                 {getPageNumbers().map((page, index) => {
                     if (page === 'ellipsis') {
                         return (
-                            <li key={`ellipsis-${index}`}>
-                <span className="flex items-center justify-center w-10 h-10 text-gray-700 dark:text-gray-200">
-                  ...
-                </span>
-                            </li>
+                            <motion.li key={`ellipsis-${index}`} variants={itemVariants}>
+                                <span className="flex items-center justify-center w-10 h-10 text-gray-700 dark:text-gray-200">
+                                    ...
+                                </span>
+                            </motion.li>
                         );
                     }
 
                     const pageNumber = page as number;
                     return (
-                        <li key={pageNumber}>
+                        <motion.li key={pageNumber} variants={itemVariants}>
                             <button
                                 onClick={() => onPageChange(pageNumber)}
-                                className={`flex items-center justify-center w-10 h-10 rounded-md mx-1 font-medium ${
+                                className={`flex items-center justify-center w-10 h-10 rounded-md mx-1 font-medium transition-all duration-300 ${
                                     currentPage === pageNumber
-                                        ? 'bg-primary text-white'
-                                        : 'text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20'
+                                        ? 'bg-primary text-white shadow-md transform scale-105'
+                                        : 'text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-primary/20'
                                 }`}
                                 aria-label={`Page ${pageNumber + 1}`}
                                 aria-current={currentPage === pageNumber ? 'page' : undefined}
                             >
                                 {pageNumber + 1}
                             </button>
-                        </li>
+                        </motion.li>
                     );
                 })}
 
                 {/* Next page button */}
-                <li>
+                <motion.li variants={itemVariants}>
                     <button
                         onClick={() => onPageChange(currentPage + 1)}
                         disabled={currentPage >= totalPages - 1}
-                        className={`flex items-center justify-center w-10 h-10 rounded-md ml-2 ${
+                        className={`flex items-center justify-center w-10 h-10 rounded-md ml-2 transition-colors duration-200 ${
                             currentPage >= totalPages - 1
                                 ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
-                                : 'text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20'
+                                : 'text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-primary/20'
                         }`}
                         aria-label="Next page"
                     >
                         <FiChevronRight className="w-5 h-5" />
                     </button>
-                </li>
-            </ul>
-        </nav>
+                </motion.li>
+            </motion.ul>
+        </motion.nav>
     );
 };
 

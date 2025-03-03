@@ -1,5 +1,5 @@
 import React from 'react';
-import { FiShoppingBag } from 'react-icons/fi';
+import { motion } from 'framer-motion';
 
 interface EmptyStateProps {
     title: string;
@@ -11,32 +11,69 @@ interface EmptyStateProps {
     icon?: React.ReactNode;
 }
 
-const EmptyState: React.FC<EmptyStateProps> = ({
-                                                   title,
-                                                   description,
-                                                   action,
-                                                   icon = <FiShoppingBag className="w-12 h-12 mx-auto text-gray-400 dark:text-gray-600" />,
-                                               }) => {
+const EmptyState: React.FC<EmptyStateProps> = ({ title, description, action, icon }) => {
     return (
-        <div className="flex flex-col items-center justify-center py-12 px-4 text-center bg-white dark:bg-darkBackground rounded-lg shadow-sm">
-            <div className="mb-4">
-                {icon}
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+        <motion.div
+            className="flex flex-col items-center justify-center py-12 px-4 text-center"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+        >
+            {icon ? (
+                <div className="mb-6 text-gray-400 dark:text-gray-500">
+                    {icon}
+                </div>
+            ) : (
+                <div className="mb-6 text-gray-400 dark:text-gray-500">
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-16 w-16"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                    >
+                        <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={1.5}
+                            d="M4 6h16M4 12h16M4 18h7"
+                        />
+                    </svg>
+                </div>
+            )}
+
+            <motion.h3
+                className="text-xl font-semibold text-gray-900 dark:text-white mb-2"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2, duration: 0.4 }}
+            >
                 {title}
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 max-w-md mx-auto mb-6">
+            </motion.h3>
+
+            <motion.p
+                className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-lg"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.4, duration: 0.4 }}
+            >
                 {description}
-            </p>
+            </motion.p>
+
             {action && (
-                <button
+                <motion.button
+                    className="px-4 py-2 bg-primary text-white rounded-lg shadow hover:bg-primary/90 transition-colors duration-200 font-medium"
                     onClick={action.onClick}
-                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary dark:focus:ring-accent"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.6, duration: 0.4 }}
                 >
                     {action.label}
-                </button>
+                </motion.button>
             )}
-        </div>
+        </motion.div>
     );
 };
 

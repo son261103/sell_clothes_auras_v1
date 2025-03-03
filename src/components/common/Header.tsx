@@ -48,7 +48,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         };
 
         fetchUserIfNeeded();
-    }, [accessToken, getUserProfile, signOut]);
+    }, [accessToken, getUserProfile, signOut, user]);
 
     useEffect(() => {
         const handleScroll = () => setIsScrolled(window.scrollY > 50);
@@ -93,7 +93,15 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
     };
 
     const toggleTheme = () => {
+        // Apply dark mode directly to document element with CSS variables
+        document.documentElement.classList.toggle('dark', !isDarkMode);
+
+        // Update theme state
         setIsDarkMode(!isDarkMode);
+
+        // Save theme preference to localStorage
+        localStorage.setItem('theme', !isDarkMode ? 'dark' : 'light');
+
         toast.success(`Đã chuyển sang chế độ ${isDarkMode ? 'sáng' : 'tối'}`);
     };
 
@@ -113,7 +121,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
             className={`relative w-full z-50 transition-all duration-300 border-b-2 border-primary ${
                 isScrolled
                     ? 'bg-white/95 dark:bg-darkBackground/95 backdrop-blur-md shadow-md'
-                    : 'bg-transparent'
+                    : 'bg-white dark:bg-darkBackground'
             }`}
             data-aos="fade-down"
             data-aos-duration="800"
