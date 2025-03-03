@@ -5,20 +5,50 @@ import Footer from '../components/common/Footer';
 import { Toaster } from 'react-hot-toast';
 import { AnimatePresence, motion } from 'framer-motion';
 
+// Initialize theme from localStorage, system preference, or default
+const initializeTheme = () => {
+    // First check if theme is stored in localStorage
+    const savedTheme = localStorage.getItem('theme');
+
+    if (savedTheme) {
+        // Apply the saved theme immediately to avoid flash
+        document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+        return savedTheme === 'dark';
+    }
+    // Otherwise check system preference
+    else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        // Apply dark mode immediately
+        document.documentElement.classList.add('dark');
+        return true;
+    }
+
+    // Default to light mode
+    document.documentElement.classList.remove('dark');
+    return false;
+};
+
 const MainLayout = () => {
-    const [isDarkMode, setIsDarkMode] = useState(false);
+    const [isDarkMode, setIsDarkMode] = useState(initializeTheme());
     const [isLoading, setIsLoading] = useState(true);
 
-    // Handle dark mode toggle
+    // Set up listener for system theme changes
     useEffect(() => {
-        // Check if user previously saved dark mode preference
-        const savedDarkMode = localStorage.getItem('darkMode') === 'true';
-        setIsDarkMode(savedDarkMode);
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
-        if (savedDarkMode) {
-            document.documentElement.classList.add('dark');
+        const handleChange = (event: MediaQueryListEvent) => {
+            // Only change theme based on system preference if user hasn't explicitly set a preference
+            if (!localStorage.getItem('theme')) {
+                const newDarkMode = event.matches;
+                document.documentElement.classList.toggle('dark', newDarkMode);
+                setIsDarkMode(newDarkMode);
+            }
+        };
+
+        // Add listener (with compatibility for older browsers)
+        if (mediaQuery.addEventListener) {
+            mediaQuery.addEventListener('change', handleChange);
         } else {
-            document.documentElement.classList.remove('dark');
+            mediaQuery.addListener(handleChange);
         }
 
         // Simulate loading for a smoother entry experience
@@ -26,22 +56,30 @@ const MainLayout = () => {
             setIsLoading(false);
         }, 800);
 
-        return () => clearTimeout(timer);
+        // Cleanup functions
+        return () => {
+            if (mediaQuery.removeEventListener) {
+                mediaQuery.removeEventListener('change', handleChange);
+            } else {
+                mediaQuery.removeListener(handleChange);
+            }
+            clearTimeout(timer);
+        };
     }, []);
 
-    // Save dark mode state when it changes
-    useEffect(() => {
-        localStorage.setItem('darkMode', isDarkMode.toString());
-
-        if (isDarkMode) {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    }, [isDarkMode]);
-
+    // Handle dark mode changes and save to localStorage
     const toggleDarkMode = () => {
-        setIsDarkMode(prevMode => !prevMode);
+        setIsDarkMode(prevMode => {
+            const newMode = !prevMode;
+
+            // Update classList on document
+            document.documentElement.classList.toggle('dark', newMode);
+
+            // Save to localStorage
+            localStorage.setItem('theme', newMode ? 'dark' : 'light');
+
+            return newMode;
+        });
     };
 
     return (
@@ -152,6 +190,8 @@ const ScrollToTopButton = () => {
                     onClick={scrollToTop}
                     className="fixed bottom-6 right-6 p-3 rounded-full bg-primary text-white shadow-lg hover:bg-primary/90 transition-all duration-300 z-20"
                     aria-label="Scroll to top"
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.95 }}
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M18 15l-6-6-6 6"/>

@@ -35,7 +35,6 @@ const ProductsPage: React.FC = () => {
         sortBy,
         sortDir,
         updatePage,
-        updatePageSize,
         resetFilters,
         applyFilters,
         categories,
@@ -108,11 +107,6 @@ const ProductsPage: React.FC = () => {
                 block: 'start'
             });
         }
-    };
-
-    const handlePageSizeChange = (size: number) => {
-        updatePageSize(size);
-        updatePage(0); // Reset to first page when changing page size
     };
 
     const handleFilterReset = () => {
@@ -394,31 +388,6 @@ const ProductsPage: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Product results information */}
-                            {!loading && products.length > 0 && (
-                                <div className="mb-4 text-sm text-gray-500 dark:text-gray-400 flex justify-between items-center">
-                                    <div>
-                                        Hiển thị {products.length} sản phẩm {totalPages > 1 ? `(trang ${currentPage + 1}/${totalPages})` : ''}
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <label htmlFor="pageSize" className="text-sm text-gray-500 dark:text-gray-400">
-                                            Hiển thị:
-                                        </label>
-                                        <select
-                                            id="pageSize"
-                                            className="text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary dark:focus:ring-accent"
-                                            value={pageSize}
-                                            onChange={(e) => handlePageSizeChange(Number(e.target.value))}
-                                        >
-                                            <option value={12}>12</option>
-                                            <option value={24}>24</option>
-                                            <option value={36}>36</option>
-                                            <option value={48}>48</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            )}
-
                             {/* Top Pagination for many products */}
                             {!loading && products.length > 0 && totalPages > 1 && (
                                 <div className="mb-6">
@@ -457,7 +426,7 @@ const ProductsPage: React.FC = () => {
                                 />
                             ) : products.length > 0 ? (
                                 <>
-                                    <div className={`bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-inner transition-all duration-300 ${loading ? 'opacity-70' : 'opacity-100'}`}>
+                                    <div className={`bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-inner duration-300 ${loading ? 'opacity-70' : 'opacity-100'}`}>
                                         <ProductGrid products={products} loading={loading} viewMode={viewMode} />
                                     </div>
 

@@ -216,7 +216,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, viewMode = 'grid' })
     // Grid view (default)
     return (
         <motion.div
-            className="group bg-white dark:bg-secondary/10 rounded-xl overflow-hidden shadow-sm transition-all duration-300 border border-highlight/10 dark:border-secondary/30 hover:shadow-lg hover:border-primary/20 dark:hover:border-primary/30 h-full flex flex-col cursor-pointer"
+            className="group bg-white dark:bg-secondary/10 rounded-xl overflow-hidden shadow-sm  duration-300 border border-highlight/10 dark:border-secondary/30 hover:shadow-lg hover:border-primary/20 dark:hover:border-primary/30 h-full flex flex-col cursor-pointer"
             whileHover={{ y: -3 }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
