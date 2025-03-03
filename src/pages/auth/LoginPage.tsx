@@ -17,19 +17,31 @@ const LoginPage: React.FC = () => {
     const navigate = useNavigate();
     const { login, loading, error } = useAuth();
 
-    // Reset local error when inputs change
+    // Khôi phục thông tin đăng nhập nếu "Ghi nhớ tôi" được lưu
+    useEffect(() => {
+        const savedLoginId = localStorage.getItem('rememberedLoginId');
+        if (savedLoginId) {
+            setLoginId(savedLoginId);
+            setRememberMe(true);
+        }
+    }, []);
+
+    // Reset local error khi inputs thay đổi
     useEffect(() => {
         if (localError) {
             setLocalError(null);
         }
     }, [loginId, password]);
 
-    // Log initial states for debugging
+    // Log trạng thái ban đầu để debug
     useEffect(() => {
         console.log('Auth state loaded:', { loading, error });
     }, [loading, error]);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>, setter: React.Dispatch<React.SetStateAction<string>>) => {
+    const handleInputChange = (
+        e: React.ChangeEvent<HTMLInputElement>,
+        setter: React.Dispatch<React.SetStateAction<string>>
+    ) => {
         console.log('Input changing:', e.target.name, e.target.value);
         setter(e.target.value);
     };
@@ -38,7 +50,6 @@ const LoginPage: React.FC = () => {
         e.preventDefault();
         setLocalError(null);
 
-        // Form validation
         if (!loginId || !password) {
             setLocalError('Vui lòng nhập đầy đủ thông tin đăng nhập');
             toast.error('Vui lòng nhập đầy đủ thông tin đăng nhập');
@@ -48,6 +59,13 @@ const LoginPage: React.FC = () => {
         try {
             setIsSubmitting(true);
             await login({ loginId, password, rememberMe });
+
+            if (rememberMe) {
+                localStorage.setItem('rememberedLoginId', loginId);
+            } else {
+                localStorage.removeItem('rememberedLoginId');
+            }
+
             toast.success('Đăng nhập thành công!');
             navigate('/');
         } catch (err) {
@@ -64,43 +82,63 @@ const LoginPage: React.FC = () => {
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-[#f9e1e5] via-[#fce4e8] to-[#e8f0fe] dark:from-[#d1a3ab] dark:via-[#b58c94] dark:to-[#a3bffa] text-textDark dark:text-textLight relative overflow-hidden transition-colors duration-300">
-            {/* Background decorations with pointer-events-none to prevent blocking inputs */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute w-96 h-96 bg-accent/10 rounded-full -top-32 -left-32 blur-3xl transform rotate-45 animate-pulse"></div>
-                <div className="absolute w-80 h-80 bg-primary/10 rounded-full bottom-0 right-0 blur-3xl transform -rotate-30 animate-pulse"></div>
+        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-lightBackground via-primary to-accent dark:from-darkBackground dark:via-secondary dark:to-accent text-textDark dark:text-textLight transition-colors duration-500 relative overflow-hidden">
+            {/* Background decorations */}
+            <div className="absolute inset-0 pointer-events-none">
+                <motion.div
+                    className="absolute w-96 h-96 bg-primary/20 rounded-full -top-40 -left-40 blur-3xl"
+                    animate={{ scale: [1, 1.2, 1], rotate: [0, 45, 0] }}
+                    transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }}
+                />
+                <motion.div
+                    className="absolute w-72 h-72 bg-accent/20 rounded-full bottom-10 right-10 blur-3xl"
+                    animate={{ scale: [1, 1.1, 1], rotate: [0, -30, 0] }}
+                    transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
+                />
             </div>
 
             <motion.div
-                className="w-full max-w-4xl mx-auto p-8 bg-white dark:bg-darkBackground rounded-2xl shadow-2xl border border-highlight/30 relative z-10"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.6, ease: 'easeOut' }}
+                className="w-full max-w-5xl mx-4 p-10 bg-white/90 dark:bg-darkBackground/90 backdrop-blur-md rounded-3xl shadow-xl border border-highlight/20 relative z-10"
+                initial={{ opacity: 0, y: 50 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, ease: 'easeOut' }}
             >
-                <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
                     {/* Logo Section */}
-                    <div className="w-full lg:w-1/2 p-6 rounded-lg shadow-inner flex flex-col items-center space-y-8 bg-gradient-to-b from-white to-[#f8f8f8] dark:from-darkBackground dark:to-darkBackground/90">
+                    <div className="flex flex-col items-center justify-center space-y-6">
                         <motion.div
-                            className="flex flex-col items-center"
-                            initial={{ y: -20, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            transition={{ delay: 0.3, duration: 0.5 }}
+                            className="relative"
+                            initial={{ scale: 0.8, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            transition={{ delay: 0.2, duration: 0.6 }}
                         >
-                            <GiStarSwirl className="w-[120px] h-[120px] text-primary hover:text-accent transition-colors duration-300 transform hover:scale-110 cursor-pointer" />
-                            <p className="text-3xl font-bold text-primary mt-6 hover:text-accent transition-colors duration-300">AURAS</p>
+                            <motion.div
+                                className="absolute inset-0 w-[150px] h-[150px] bg-gradient-to-r from-primary/30 to-accent/30 rounded-full blur-xl"
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 10, repeat: Infinity, ease: 'linear' }}
+                            />
+                            <GiStarSwirl className="relative w-[150px] h-[150px] text-primary hover:text-accent transition-colors duration-300 transform hover:scale-105" />
                         </motion.div>
+                        <motion.p
+                            className="text-4xl font-extrabold text-primary tracking-wide"
+                            initial={{ y: 20, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            transition={{ delay: 0.4, duration: 0.5 }}
+                        >
+                            AURAS
+                        </motion.p>
                     </div>
 
                     {/* Form Section */}
-                    <div className="border-l-2 border-highlight/30 dark:border-highlight/20 w-full lg:w-1/2 p-6">
-                        <h2 className="text-2xl font-semibold text-center mb-6 text-darkBackground dark:text-textLight">
+                    <div className="p-8 bg-lightBackground/50 dark:bg-darkBackground/50 rounded-2xl shadow-inner border border-highlight/30">
+                        <h2 className="text-3xl font-bold text-center mb-8 text-textDark dark:text-textLight">
                             Đăng nhập
                         </h2>
 
                         {/* Error and Loading States */}
                         {(error || localError) && (
                             <motion.p
-                                className="text-red-500 dark:text-red-400 text-center mb-4 text-base bg-red-50 dark:bg-red-900/20 p-2 rounded-lg"
+                                className="text-red-500 dark:text-red-400 text-center mb-6 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg text-sm"
                                 initial={{ opacity: 0, y: -10 }}
                                 animate={{ opacity: 1, y: 0 }}
                             >
@@ -108,15 +146,15 @@ const LoginPage: React.FC = () => {
                             </motion.p>
                         )}
                         {(loading || isSubmitting) && (
-                            <p className="text-accent dark:text-accent text-center mb-4 text-base bg-accent/10 p-2 rounded-lg animate-pulse">
+                            <p className="text-accent dark:text-accent text-center mb-6 bg-accent/10 p-3 rounded-lg animate-pulse text-sm">
                                 Đang xử lý...
                             </p>
                         )}
 
                         {/* Login Form */}
-                        <form onSubmit={handleLogin} className="space-y-4">
+                        <form onSubmit={handleLogin} className="space-y-6">
                             <div>
-                                <label htmlFor="loginId" className="block text-base font-medium text-secondary dark:text-highlight mb-2">
+                                <label htmlFor="loginId" className="block text-sm font-medium text-secondary dark:text-highlight mb-2">
                                     Tên đăng nhập
                                 </label>
                                 <input
@@ -125,7 +163,7 @@ const LoginPage: React.FC = () => {
                                     type="text"
                                     value={loginId}
                                     onChange={(e) => handleInputChange(e, setLoginId)}
-                                    className="w-full p-3 border border-highlight dark:border-highlight/50 rounded-lg focus:ring-2 focus:ring-primary dark:focus:ring-primary focus:border-primary dark:focus:border-primary text-base placeholder-secondary/50 dark:placeholder-highlight/50 bg-lightBackground dark:bg-darkBackground text-textDark dark:text-textLight transition-all duration-300 cursor-text"
+                                    className="w-full p-3 border border-highlight/50 dark:border-highlight/70 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary dark:focus:ring-accent dark:focus:border-accent bg-white dark:bg-darkBackground text-textDark dark:text-textLight placeholder-secondary/60 dark:placeholder-highlight/60 transition-all duration-300 shadow-sm hover:shadow-md"
                                     placeholder="Nhập tên đăng nhập"
                                     disabled={isSubmitting}
                                     autoComplete="username"
@@ -133,7 +171,7 @@ const LoginPage: React.FC = () => {
                             </div>
 
                             <div>
-                                <label htmlFor="password" className="block text-base font-medium text-secondary dark:text-highlight mb-2">
+                                <label htmlFor="password" className="block text-sm font-medium text-secondary dark:text-highlight mb-2">
                                     Mật khẩu
                                 </label>
                                 <input
@@ -142,7 +180,7 @@ const LoginPage: React.FC = () => {
                                     type="password"
                                     value={password}
                                     onChange={(e) => handleInputChange(e, setPassword)}
-                                    className="w-full p-3 border border-highlight dark:border-highlight/50 rounded-lg focus:ring-2 focus:ring-primary dark:focus:ring-primary focus:border-primary dark:focus:border-primary text-base placeholder-secondary/50 dark:placeholder-highlight/50 bg-lightBackground dark:bg-darkBackground text-textDark dark:text-textLight transition-all duration-300 cursor-text"
+                                    className="w-full p-3 border border-highlight/50 dark:border-highlight/70 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary dark:focus:ring-accent dark:focus:border-accent bg-white dark:bg-darkBackground text-textDark dark:text-textLight placeholder-secondary/60 dark:placeholder-highlight/60 transition-all duration-300 shadow-sm hover:shadow-md"
                                     placeholder="Nhập mật khẩu"
                                     disabled={isSubmitting}
                                     autoComplete="current-password"
@@ -150,23 +188,30 @@ const LoginPage: React.FC = () => {
                             </div>
 
                             <div className="flex items-center justify-between">
-                                <label htmlFor="rememberMe" className="flex items-center cursor-pointer group">
-                                    <input
+                                <motion.label
+                                    htmlFor="rememberMe"
+                                    className="flex items-center cursor-pointer group"
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
+                                >
+                                    <motion.input
                                         id="rememberMe"
                                         name="rememberMe"
                                         type="checkbox"
                                         checked={rememberMe}
                                         onChange={(e) => setRememberMe(e.target.checked)}
-                                        className="h-5 w-5 text-primary dark:text-primary focus:ring-2 focus:ring-primary dark:focus:ring-primary border-highlight dark:border-highlight/50 rounded hover:ring-2 hover:ring-primary/50 cursor-pointer transition-all duration-300"
+                                        className="h-4 w-4 text-primary dark:text-accent focus:ring-2 focus:ring-primary dark:focus:ring-accent border-highlight/50 rounded transition-all duration-300 cursor-pointer"
                                         disabled={isSubmitting}
+                                        animate={{ scale: rememberMe ? 1.1 : 1 }}
+                                        transition={{ duration: 0.2 }}
                                     />
-                                    <span className="ml-2 text-base text-secondary dark:text-highlight group-hover:text-primary dark:group-hover:text-primary transition-colors duration-300">
+                                    <span className="ml-2 text-sm text-secondary dark:text-highlight group-hover:text-primary dark:group-hover:text-accent transition-colors duration-300">
                                         Ghi nhớ tôi
                                     </span>
-                                </label>
+                                </motion.label>
                                 <Link
                                     to="/forgot-password"
-                                    className="text-base text-primary dark:text-primary hover:underline hover:text-accent dark:hover:text-accent transition-colors duration-300"
+                                    className="text-sm text-primary dark:text-primary hover:text-accent dark:hover:text-accent transition-colors duration-300"
                                 >
                                     Quên mật khẩu?
                                 </Link>
@@ -174,8 +219,9 @@ const LoginPage: React.FC = () => {
 
                             <motion.button
                                 type="submit"
-                                className="w-full p-3 bg-gradient-to-r from-primary to-accent dark:from-primary dark:to-accent text-white rounded-lg hover:from-accent hover:to-primary dark:hover:from-accent dark:hover:to-primary transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed text-base font-medium shadow-md hover:shadow-lg active:shadow-sm transform hover:-translate-y-1 active:translate-y-0 cursor-pointer"
+                                className="w-full p-3 bg-gradient-to-r from-primary to-accent text-white rounded-lg hover:from-accent hover:to-primary transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed text-base font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-1"
                                 disabled={isSubmitting}
+                                whileHover={{ scale: 1.02 }}
                                 whileTap={{ scale: 0.98 }}
                             >
                                 {isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
@@ -183,34 +229,39 @@ const LoginPage: React.FC = () => {
                         </form>
 
                         {/* Social Login Buttons */}
-                        <div className="mt-6 space-y-3">
+                        <div className="mt-8 space-y-4">
                             <motion.button
-                                className="w-full p-3 bg-white dark:bg-darkBackground border border-highlight dark:border-highlight/50 rounded-lg flex items-center justify-center text-base text-darkBackground dark:text-textLight hover:bg-[#4285f4]/10 transition-all duration-300 shadow-sm hover:shadow-md transform hover:-translate-y-1 active:translate-y-0 group cursor-pointer"
+                                className="w-full p-3 bg-white dark:bg-darkBackground border border-highlight/50 rounded-lg flex items-center justify-center text-sm text-textDark dark:text-textLight hover:bg-primary/10 transition-all duration-300 shadow-sm hover:shadow-md group"
                                 disabled={isSubmitting}
                                 onClick={() => handleSocialLogin('Google')}
+                                whileHover={{ scale: 1.02 }}
                                 whileTap={{ scale: 0.98 }}
                                 type="button"
                             >
-                                <FcGoogle className="mr-2 text-xl group-hover:scale-110 transition-transform duration-300" />
-                                <span className="group-hover:text-[#4285f4] dark:group-hover:text-[#4285f4]/80 transition-colors duration-300">Đăng nhập bằng Google</span>
+                                <FcGoogle className="mr-2 text-lg group-hover:scale-110 transition-transform duration-300" />
+                                <span className="group-hover:text-primary dark:group-hover:text-accent">Đăng nhập bằng Google</span>
                             </motion.button>
 
                             <motion.button
-                                className="w-full p-3 bg-white dark:bg-darkBackground border border-highlight dark:border-highlight/50 rounded-lg flex items-center justify-center text-base text-darkBackground dark:text-textLight hover:bg-[#3b5998]/10 transition-all duration-300 shadow-sm hover:shadow-md transform hover:-translate-y-1 active:translate-y-0 group cursor-pointer"
+                                className="w-full p-3 bg-white dark:bg-darkBackground border border-highlight/50 rounded-lg flex items-center justify-center text-sm text-textDark dark:text-textLight hover:bg-primary/10 transition-all duration-300 shadow-sm hover:shadow-md group"
                                 disabled={isSubmitting}
                                 onClick={() => handleSocialLogin('Facebook')}
+                                whileHover={{ scale: 1.02 }}
                                 whileTap={{ scale: 0.98 }}
                                 type="button"
                             >
-                                <FaFacebook className="mr-2 text-xl text-[#3b5998] group-hover:scale-110 transition-transform duration-300" />
-                                <span className="group-hover:text-[#3b5998] dark:group-hover:text-[#3b5998]/80 transition-colors duration-300">Đăng nhập bằng Facebook</span>
+                                <FaFacebook className="mr-2 text-lg text-[#3b5998] group-hover:scale-110 transition-transform duration-300" />
+                                <span className="group-hover:text-primary dark:group-hover:text-accent">Đăng nhập bằng Facebook</span>
                             </motion.button>
                         </div>
 
                         {/* Register Link */}
-                        <p className="text-center text-base text-secondary dark:text-highlight mt-6">
+                        <p className="text-center text-sm text-secondary dark:text-highlight mt-6">
                             Chưa có tài khoản?{' '}
-                            <Link to="/register" className="text-primary dark:text-primary hover:underline hover:text-accent dark:hover:text-accent transition-colors duration-300">
+                            <Link
+                                to="/register"
+                                className="text-primary dark:text-primary hover:text-accent dark:hover:text-accent transition-colors duration-300"
+                            >
                                 Đăng ký ngay
                             </Link>
                         </p>

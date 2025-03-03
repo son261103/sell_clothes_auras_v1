@@ -1,5 +1,7 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosError } from 'axios';
 import { toast } from 'react-hot-toast';
+import { store } from '../redux/store'; // Đảm bảo bạn đã export store
+import { loginSuccess } from '../redux/slices/authSlice';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -19,6 +21,16 @@ const publicApi: AxiosInstance = axios.create({
     withCredentials: true,
 });
 
+// Hàm lấy refresh token từ cookie (đồng bộ với AuthService)
+const getRefreshToken = (): string | null => {
+    const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+        const [name, value] = cookie.trim().split('=');
+        acc[name] = value;
+        return acc;
+    }, {} as Record<string, string>);
+    return cookies['refreshToken'] || null;
+};
+
 const addAuthToken = (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
     const token = localStorage.getItem('accessToken');
     if (token && config.headers) {
@@ -35,11 +47,21 @@ const handleTokenRefresh = async (error: AxiosError, apiInstance: AxiosInstance)
         originalRequest._retry = true;
         try {
             console.log('Attempting to refresh token...');
-            const response = await authApi.post('/auth/refresh-token', {});
-            const newTokens = response.data;
-            console.log('New tokens received:', newTokens);
+            const refreshToken = getRefreshToken();
+            if (!refreshToken) {
+                throw new Error('No refresh token available');
+            }
 
+            const response = await authApi.post('/auth/refresh-token', { refreshToken });
+            const newTokens = response.data;
+
+            console.log('New tokens received:', newTokens);
             localStorage.setItem('accessToken', newTokens.accessToken);
+            document.cookie = `refreshToken=${newTokens.refreshToken}; path=/; max-age=604800;`; // 7 ngày
+
+            // Cập nhật Redux store
+            store.dispatch(loginSuccess(newTokens));
+
             if (originalRequest.headers) {
                 originalRequest.headers['Authorization'] = `Bearer ${newTokens.accessToken}`;
             }

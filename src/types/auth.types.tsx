@@ -1,18 +1,16 @@
+// User status enum (matching backend)
+export enum UserStatus {
+    ACTIVE = 1,
+    LOCKED = 2,
+    BANNER = 3, // Note: This matches your backend enum (BANNER instead of BANNED)
+    PENDING = 4
+}
+
 // Định nghĩa các DTOs cho request gửi từ client lên server
 export interface LoginRequest {
     loginId: string;
     password: string;
     rememberMe: boolean;
-}
-
-// types/auth.types.ts
-export interface UserProfile {
-    userId: number;
-    username: string;
-    email: string;
-    fullName: string;
-    roles: string[];
-    permissions: string[];
 }
 
 export interface RegisterRequest {
@@ -53,6 +51,7 @@ export interface ChangePasswordWithOtpRequest {
 export interface ApiResponse {
     success: boolean;
     message: string;
+    userStatus?: UserStatus;
 }
 
 export interface TokenResponse {
@@ -66,6 +65,7 @@ export interface TokenResponse {
     fullName: string;
     roles: string[];
     permissions: string[];
+    userStatus: UserStatus; // Added userStatus field
 }
 
 export interface RegisterResponse {
@@ -74,6 +74,7 @@ export interface RegisterResponse {
     email: string;
     message: string;
     requiresEmailVerification: boolean;
+    userStatus: UserStatus; // Added userStatus field
 }
 
 export interface UserProfile {
@@ -83,7 +84,7 @@ export interface UserProfile {
     fullName: string;
     phone?: string;
     avatar?: string;
-    status: string;
+    status: UserStatus; // Changed to use enum
     createdAt?: string;
     lastLoginAt?: string;
     roles: string[];
@@ -91,4 +92,12 @@ export interface UserProfile {
     address?: string;
     dateOfBirth?: string;
     gender?: string;
+}
+
+// Interface for status modal configuration
+export interface StatusModalConfig {
+    isOpen: boolean;
+    type: 'locked' | 'banned' | 'pending';
+    title: string;
+    message: string;
 }
