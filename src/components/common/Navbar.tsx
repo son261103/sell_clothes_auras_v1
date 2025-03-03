@@ -36,8 +36,8 @@ const Navbar: React.FC<NavbarProps> = ({ isMobile = false, onLinkClick }) => {
                     key={item.to}
                     to={item.to}
                     className={({ isActive }) =>
-                        `text-primary transition font-medium text-sm relative group ${
-                            isMobile ? 'py-2 border-b border-gray-100 dark:border-gray-700' : ''
+                        `text-primary transition font-medium relative group ${
+                            isMobile ? 'py-2 border-b border-gray-100 dark:border-gray-700 text-sm' : 'text-base'
                         } ${isActive ? 'text-primary/80 font-bold' : ''}`
                     }
                     onClick={onLinkClick}
@@ -46,8 +46,8 @@ const Navbar: React.FC<NavbarProps> = ({ isMobile = false, onLinkClick }) => {
                         <>
                             {item.label}
                             <span className={`absolute bottom-[-4px] left-[0px] right-[-10px] h-[2px] bg-primary transition-all  group-hover:w-full ${
-                                    isMobile ? 'left-0 right-0' : 'w-0'
-                                } ${isActive ? 'w-full left-[-2px] right-[-2px]' : ''}`}
+                                isMobile ? 'left-0 right-0' : 'w-0'
+                            } ${isActive ? 'w-full left-[-2px] right-[-2px]' : ''}`}
                             ></span>
                         </>
                     )}
@@ -69,7 +69,9 @@ const Navbar: React.FC<NavbarProps> = ({ isMobile = false, onLinkClick }) => {
                         >
                             {({ isActive }) => (
                                 <>
-                                    {item.icon}
+                                    <span className="w-5 h-5 flex items-center justify-center">
+                                        {item.icon}
+                                    </span>
                                     {item.label}
                                     <span
                                         className={`absolute bottom-[-4px] left-[-2px] right-[-2px] h-[2px] bg-primary transition-all duration-300 group-hover:w-full ${

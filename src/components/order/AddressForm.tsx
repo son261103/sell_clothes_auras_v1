@@ -120,9 +120,9 @@ const AddressForm: React.FC<AddressFormProps> = ({ address, onSuccess, onCancel,
     const isFormDisabled = loading || submitting;
 
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
-            <div className="flex justify-between items-center mb-6 px-4 pt-4">
-                <h2 className="text-xl font-semibold text-textDark dark:text-textLight flex items-center">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
+            <div className="flex justify-between items-center mb-5 border-b border-gray-100 dark:border-gray-700 pb-4 px-6 pt-4">
+                <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
                     <div className="bg-primary/10 p-2 rounded-full mr-2">
                         <FiMap className="w-5 h-5 text-primary" />
                     </div>
@@ -144,13 +144,13 @@ const AddressForm: React.FC<AddressFormProps> = ({ address, onSuccess, onCancel,
 
             <motion.form
                 onSubmit={handleSubmit}
-                className="space-y-5 px-4 pb-4"
+                className="space-y-5 px-6 pb-6"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.3 }}
             >
                 <div>
-                    <label htmlFor="addressLine" className="block text-sm font-medium text-textDark dark:text-textLight mb-1 flex items-center">
+                    <label htmlFor="addressLine" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
                         <FiHome className="w-4 h-4 mr-1 text-primary" /> Địa chỉ chi tiết <span className="text-red-500 ml-1">*</span>
                     </label>
                     <input
@@ -159,7 +159,7 @@ const AddressForm: React.FC<AddressFormProps> = ({ address, onSuccess, onCancel,
                         value={addressLine}
                         onChange={(e) => setAddressLine(e.target.value)}
                         disabled={isFormDisabled}
-                        className={`w-full p-3 border ${errors.addressLine ? 'border-red-500' : 'border-gray-200 dark:border-gray-600'} rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 dark:text-textLight disabled:opacity-70 disabled:cursor-not-allowed transition-colors`}
+                        className={`w-full p-2 border ${errors.addressLine ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} rounded-md focus:outline-none focus:ring-1 focus:ring-primary bg-white dark:bg-gray-700 dark:text-white disabled:opacity-70 disabled:cursor-not-allowed transition-colors`}
                         placeholder="Số nhà, tên đường, tòa nhà..."
                     />
                     {errors.addressLine && (
@@ -175,7 +175,7 @@ const AddressForm: React.FC<AddressFormProps> = ({ address, onSuccess, onCancel,
 
                 {/* Khu vực địa chỉ */}
                 <div>
-                    <label className="block text-sm font-medium text-textDark dark:text-textLight mb-1 flex items-center">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
                         <FiMap className="w-4 h-4 mr-1 text-primary" /> Khu vực địa chỉ <span className="text-red-500 ml-1">*</span>
                     </label>
                     <div className="mt-1">
@@ -196,7 +196,7 @@ const AddressForm: React.FC<AddressFormProps> = ({ address, onSuccess, onCancel,
                 </div>
 
                 <div>
-                    <label htmlFor="phoneNumber" className="block text-sm font-medium text-textDark dark:text-textLight mb-1 flex items-center">
+                    <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 flex items-center">
                         <FiPhone className="w-4 h-4 mr-1 text-primary" /> Số điện thoại <span className="text-red-500 ml-1">*</span>
                     </label>
                     <input
@@ -209,7 +209,7 @@ const AddressForm: React.FC<AddressFormProps> = ({ address, onSuccess, onCancel,
                             setPhoneNumber(value);
                         }}
                         disabled={isFormDisabled}
-                        className={`w-full p-3 border ${errors.phoneNumber ? 'border-red-500' : 'border-gray-200 dark:border-gray-600'} rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 dark:text-textLight disabled:opacity-70 disabled:cursor-not-allowed transition-colors`}
+                        className={`w-full p-2 border ${errors.phoneNumber ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} rounded-md focus:outline-none focus:ring-1 focus:ring-primary bg-white dark:bg-gray-700 dark:text-white disabled:opacity-70 disabled:cursor-not-allowed transition-colors`}
                         placeholder="Ví dụ: 0912345678"
                         maxLength={11}
                     />
@@ -233,7 +233,7 @@ const AddressForm: React.FC<AddressFormProps> = ({ address, onSuccess, onCancel,
                             disabled={isFormDisabled}
                             className="h-4 w-4 text-primary focus:ring-primary border-gray-300 dark:border-gray-600 rounded disabled:opacity-70 disabled:cursor-not-allowed"
                         />
-                        <span className="ml-2 text-sm text-textDark dark:text-textLight">
+                        <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
                             Đặt làm địa chỉ mặc định
                         </span>
                     </label>
@@ -247,7 +247,7 @@ const AddressForm: React.FC<AddressFormProps> = ({ address, onSuccess, onCancel,
                             type="button"
                             onClick={onCancel}
                             disabled={isFormDisabled}
-                            className="px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg text-textDark dark:text-textLight hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center disabled:opacity-70 disabled:cursor-not-allowed"
+                            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center disabled:opacity-70 disabled:cursor-not-allowed"
                         >
                             <FiX className="mr-1" /> Hủy
                         </motion.button>

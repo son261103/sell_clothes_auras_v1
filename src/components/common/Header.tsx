@@ -205,12 +205,14 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                     <NavLink
                         to="/cart"
                         className={({ isActive }) =>
-                            `text-primary transition relative p-1.5 rounded-full hover:bg-primary/10 hover:text-accent ${isActive ? 'text-primary/80' : ''}`
+                            `text-primary transition relative p-1.5 rounded-full hover:bg-primary/10 hover:text-accent ${
+                                isActive ? 'text-primary/80 font-bold' : ''
+                            }`
                         }
                         aria-label="Giỏ hàng"
                     >
                         {({ isActive }) => (
-                            <div className="relative">
+                            <div className="relative group">
                                 <FiShoppingBag className="w-5 h-5" />
                                 {itemCount > 0 && (
                                     <span className="absolute -top-1 -right-1 bg-accent text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-medium">
@@ -218,7 +220,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                                     </span>
                                 )}
                                 <span
-                                    className={`absolute bottom-0 left-0 right-0 h-[2px] bg-primary transition-all duration-300 ${
+                                    className={`absolute bottom-[-4px] left-0 right-0 h-[2px] bg-primary transition-all duration-300 group-hover:w-full ${
                                         isActive ? 'w-full' : 'w-0'
                                     }`}
                                 ></span>
@@ -268,14 +270,22 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                                         </div>
                                         <NavLink
                                             to="/profile"
-                                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20"
+                                            className={({ isActive }) =>
+                                                `block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 ${
+                                                    isActive ? 'text-primary/80 font-bold' : ''
+                                                }`
+                                            }
                                             onClick={() => setIsUserMenuOpen(false)}
                                         >
                                             Hồ sơ cá nhân
                                         </NavLink>
                                         <NavLink
                                             to="/orders"
-                                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20"
+                                            className={({ isActive }) =>
+                                                `block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 ${
+                                                    isActive ? 'text-primary/80 font-bold' : ''
+                                                }`
+                                            }
                                             onClick={() => setIsUserMenuOpen(false)}
                                         >
                                             Đơn hàng của tôi
@@ -291,14 +301,22 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                                     <>
                                         <NavLink
                                             to="/login"
-                                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20"
+                                            className={({ isActive }) =>
+                                                `block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 ${
+                                                    isActive ? 'text-primary/80 font-bold' : ''
+                                                }`
+                                            }
                                             onClick={() => setIsUserMenuOpen(false)}
                                         >
                                             Đăng nhập
                                         </NavLink>
                                         <NavLink
                                             to="/register"
-                                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20"
+                                            className={({ isActive }) =>
+                                                `block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 ${
+                                                    isActive ? 'text-primary/80 font-bold' : ''
+                                                }`
+                                            }
                                             onClick={() => setIsUserMenuOpen(false)}
                                         >
                                             Đăng ký
@@ -368,22 +386,43 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                             </div>
                             <NavLink
                                 to="/profile"
-                                className="block py-2 px-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 rounded mb-1"
+                                className={({ isActive }) =>
+                                    `block py-2 px-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 rounded mb-1 ${
+                                        isActive ? 'text-primary/80 font-bold' : ''
+                                    }`
+                                }
                                 onClick={() => setIsMenuOpen(false)}
                             >
                                 Hồ sơ cá nhân
                             </NavLink>
                             <NavLink
                                 to="/wishlist"
-                                className="flex items-center space-x-2 py-2 px-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 rounded mb-1 sm:hidden"
+                                className={({ isActive }) =>
+                                    `flex items-center space-x-2 py-2 px-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 rounded mb-1 sm:hidden ${
+                                        isActive ? 'text-primary/80 font-bold' : ''
+                                    }`
+                                }
                                 onClick={() => setIsMenuOpen(false)}
                             >
-                                <FiHeart className="w-4 h-4" />
-                                <span>Danh sách yêu thích</span>
+                                {({ isActive }) => (
+                                    <>
+                                        <FiHeart className="w-4 h-4" />
+                                        <span>Danh sách yêu thích</span>
+                                        <span
+                                            className={`absolute bottom-[-4px] left-0 right-0 h-[2px] bg-primary transition-all duration-300 group-hover:w-full ${
+                                                isActive ? 'w-full' : 'w-0'
+                                            }`}
+                                        ></span>
+                                    </>
+                                )}
                             </NavLink>
                             <NavLink
                                 to="/orders"
-                                className="block py-2 px-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 rounded mb-1"
+                                className={({ isActive }) =>
+                                    `block py-2 px-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 rounded mb-1 ${
+                                        isActive ? 'text-primary/80 font-bold' : ''
+                                    }`
+                                }
                                 onClick={() => setIsMenuOpen(false)}
                             >
                                 Đơn hàng của tôi
@@ -399,14 +438,22 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                         <div className="space-y-2">
                             <NavLink
                                 to="/login"
-                                className="w-full p-2.5 bg-primary text-white rounded-md hover:bg-opacity-90 transition block text-center mb-2"
+                                className={({ isActive }) =>
+                                    `w-full p-2.5 bg-primary text-white rounded-md hover:bg-opacity-90 transition block text-center mb-2 ${
+                                        isActive ? 'bg-opacity-90 font-bold' : ''
+                                    }`
+                                }
                                 onClick={() => setIsMenuOpen(false)}
                             >
                                 Đăng nhập
                             </NavLink>
                             <NavLink
                                 to="/register"
-                                className="w-full p-2.5 border border-primary text-primary hover:bg-primary/10 rounded-md transition block text-center"
+                                className={({ isActive }) =>
+                                    `w-full p-2.5 border border-primary text-primary hover:bg-primary/10 rounded-md transition block text-center ${
+                                        isActive ? 'bg-primary/10 font-bold' : ''
+                                    }`
+                                }
                                 onClick={() => setIsMenuOpen(false)}
                             >
                                 Đăng ký

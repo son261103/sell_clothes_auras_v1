@@ -1,6 +1,6 @@
 import React from 'react';
-import { FiChevronLeft, FiTruck, FiShield, FiClock } from 'react-icons/fi';
-import LoadingSpinner from '../common/LoadingSpinner';
+import { motion } from 'framer-motion';
+import { FiShoppingBag, FiCreditCard } from 'react-icons/fi';
 
 interface OrderSummaryProps {
     itemCount: number;
@@ -20,53 +20,51 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
                                                        loading
                                                    }) => {
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-primary/10 dark:border-primary/20 p-6 shadow-sm sticky top-4">
-            <h2 className="text-xl font-bold text-textDark dark:text-textLight mb-4">Tóm tắt đơn hàng</h2>
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-6 shadow-xl">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
+                <FiShoppingBag className="w-5 h-5 mr-2" />
+                Thanh toán đơn hàng
+            </h2>
+
             <div className="space-y-3 mb-6">
-                <div className="flex justify-between text-sm">
-                    <span className="text-secondary/70 dark:text-textLight/70">Tổng sản phẩm:</span>
-                    <span className="text-textDark dark:text-textLight">{itemCount}</span>
+                <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Số lượng sản phẩm:</span>
+                    <span className="text-gray-900 dark:text-white">{itemCount}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                    <span className="text-secondary/70 dark:text-textLight/70">Tạm tính:</span>
-                    <span className="text-textDark dark:text-textLight">
+                <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Tạm tính:</span>
+                    <span className="text-gray-900 dark:text-white">
                         {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(subtotal)}
                     </span>
                 </div>
-                <div className="flex justify-between text-sm">
-                    <span className="text-secondary/70 dark:text-textLight/70">Phí vận chuyển:</span>
-                    <span className="text-textDark dark:text-textLight">
+                <div className="flex justify-between">
+                    <span className="text-gray-500 dark:text-gray-400">Phí vận chuyển:</span>
+                    <span className="text-gray-900 dark:text-white">
                         {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(shippingFee)}
                     </span>
                 </div>
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
-                    <div className="flex justify-between font-semibold text-base">
-                        <span className="text-textDark dark:text-textLight">Tổng thanh toán:</span>
-                        <span className="text-lg font-bold text-primary">
-                            {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalPrice)}
-                        </span>
-                    </div>
+                <div className="flex justify-between border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
+                    <span className="text-base font-medium text-gray-900 dark:text-white">Tổng thanh toán:</span>
+                    <span className="text-lg font-bold text-primary">
+                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalPrice)}
+                    </span>
                 </div>
             </div>
-            <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                <ul className="space-y-2 mb-6 text-sm text-gray-600 dark:text-gray-300">
-                    <li className="flex items-center"><FiTruck className="w-5 h-5 text-primary mr-2" /> {/* Giao hàng miễn phí cho đơn trên 500.000₫ */} Phí vận chuyển phụ thuộc phương thức</li>
-                    <li className="flex items-center"><FiShield className="w-5 h-5 text-primary mr-2" /> Bảo đảm chất lượng sản phẩm</li>
-                    <li className="flex items-center"><FiClock className="w-5 h-5 text-primary mr-2" /> Đổi trả trong vòng 7 ngày</li>
-                </ul>
-                <button
-                    onClick={onCreateOrder}
-                    disabled={loading}
-                    className="w-full bg-primary text-white py-3 rounded-full hover:bg-primary/90 transition-all shadow-sm disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
-                >
-                    {loading ? <LoadingSpinner size="small" color="white" /> : (
-                        <>
-                            <span className="mr-2">Tạo đơn hàng</span>
-                            <FiChevronLeft className="w-5 h-5 transform rotate-180" />
-                        </>
-                    )}
-                </button>
-            </div>
+
+            <motion.button
+                onClick={onCreateOrder}
+                disabled={loading}
+                className="w-full bg-primary text-white py-3 rounded-lg hover:bg-primary/90 transition duration-300 shadow-md flex items-center justify-center disabled:bg-gray-400 disabled:cursor-not-allowed"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+            >
+                <span className="mr-2">Tiến hành thanh toán</span>
+                <FiCreditCard className="w-5 h-5" />
+            </motion.button>
+
+            <p className="mt-4 text-sm text-gray-500 dark:text-gray-400 text-center">
+                Bạn sẽ xác nhận đơn hàng ở bước tiếp theo trước khi thanh toán
+            </p>
         </div>
     );
 };
