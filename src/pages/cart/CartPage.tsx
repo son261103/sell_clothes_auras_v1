@@ -10,6 +10,8 @@ import AOS from 'aos';
 import { toast } from 'react-hot-toast';
 import { FiMinus, FiPlus, FiTrash2, FiChevronLeft, FiShoppingBag, FiPackage, FiShield, FiTruck } from 'react-icons/fi';
 import { CartItemDTO, CartUpdateQuantityDTO } from '../../types/cart.types';
+import { PaymentStatus } from '../../enum/PaymentStatus';
+import usePayment from '../../hooks/usePayment';
 
 interface CartItemProps {
     item: CartItemDTO;
@@ -111,11 +113,13 @@ const CartItem: React.FC<CartItemProps> = ({ item, onQuantityChange, onRemove })
     );
 };
 
-const OrderSummary: React.FC<{
+interface OrderSummaryProps {
     itemCount: number;
     totalPrice: number;
     onCheckout: () => void;
-}> = ({ itemCount, totalPrice, onCheckout }) => {
+}
+
+const OrderSummary: React.FC<OrderSummaryProps> = ({ itemCount, totalPrice, onCheckout }) => {
     return (
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-6 shadow-xl">
             <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
@@ -168,8 +172,10 @@ const OrderSummary: React.FC<{
 
 const CartPage: React.FC = () => {
     const navigate = useNavigate();
-    const [isInitialized, setIsInitialized] = useState(false);
-    const { isAuthenticated } = useAuth();
+    const [isInitialized, setIsInitialized] = useState<boolean>(false);
+    const [isRetrying, setIsRetrying] = useState<boolean>(false);
+    const [retryAttempts, setRetryAttempts] = useState<number>(0);
+    const { isAuthenticated, user } = useAuth();
     const {
         cartItems,
         loading,
@@ -180,13 +186,24 @@ const CartPage: React.FC = () => {
         removeCartItem,
         updateCartItemQuantity,
         getUserCart,
-        clearCartError
+        clearCartError,
+        clearCart
     } = useCart();
+    const { getPaymentByOrderId } = usePayment();
+
+    // Maximum number of retry attempts
+    const MAX_RETRY_ATTEMPTS = 3;
+    // Delay between retry attempts (milliseconds)
+    const RETRY_DELAY = 1000;
+
+    // Helper function to wait
+    const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
     useEffect(() => {
         AOS.init({ duration: 800, once: true });
     }, []);
 
+    // Initial cart data loading
     useEffect(() => {
         const fetchCartData = async () => {
             if (!isAuthenticated) {
@@ -209,19 +226,125 @@ const CartPage: React.FC = () => {
         fetchCartData();
     }, [getUserCart, clearCartError, isAuthenticated]);
 
+    // Clear cart with retry logic for handling concurrency issues
+    const clearCartWithRetry = async (): Promise<boolean> => {
+        setIsRetrying(true);
+        let attempts = 0;
+        let success = false;
+
+        while (attempts < MAX_RETRY_ATTEMPTS && !success) {
+            try {
+                console.log(`Attempt ${attempts + 1} to clear cart`);
+                await clearCart();
+                success = true;
+                console.log('Cart cleared successfully');
+            } catch (error) {
+                attempts++;
+                console.error(`Error clearing cart (attempt ${attempts}):`, error);
+
+                if (attempts < MAX_RETRY_ATTEMPTS) {
+                    console.log(`Waiting ${RETRY_DELAY}ms before retry...`);
+                    await wait(RETRY_DELAY);
+                } else {
+                    console.error('Max retry attempts reached. Failed to clear cart.');
+                    // Refresh the cart data in case of failure
+                    try {
+                        await getUserCart();
+                    } catch (refreshError) {
+                        console.error('Failed to refresh cart data:', refreshError);
+                    }
+                }
+            }
+        }
+
+        setIsRetrying(false);
+        setRetryAttempts(attempts);
+        return success;
+    };
+
+    // Effect to check COD payment status and clear cart if necessary
+    useEffect(() => {
+        const checkCODPaymentStatus = async () => {
+            if (!isAuthenticated || !user?.userId || isRetrying) return;
+
+            try {
+                // Check localStorage for recent COD orders
+                const recentCODOrdersString = localStorage.getItem('recentCODOrders');
+                if (recentCODOrdersString) {
+                    const recentCODOrders: number[] = JSON.parse(recentCODOrdersString);
+
+                    // Process each recent COD order
+                    for (const orderId of recentCODOrders) {
+                        try {
+                            const paymentData = await getPaymentByOrderId(orderId);
+
+                            // If the payment was COD and is in PENDING or COMPLETED status (successful COD checkout)
+                            if (paymentData &&
+                                (paymentData.paymentStatus === PaymentStatus.PENDING ||
+                                    paymentData.paymentStatus === PaymentStatus.COMPLETED)) {
+
+                                // Clear the cart with retry logic
+                                console.log(`Clearing cart for successful COD order: ${orderId}`);
+                                const clearSuccess = await clearCartWithRetry();
+
+                                if (clearSuccess) {
+                                    // Remove this order from localStorage only if clearing was successful
+                                    const updatedOrders = recentCODOrders.filter(id => id !== orderId);
+                                    if (updatedOrders.length > 0) {
+                                        localStorage.setItem('recentCODOrders', JSON.stringify(updatedOrders));
+                                    } else {
+                                        localStorage.removeItem('recentCODOrders');
+                                    }
+
+                                    // Refresh the cart data after successful clearing
+                                    await getUserCart();
+
+                                    // No need to check other orders if we've already cleared the cart
+                                    break;
+                                }
+                            }
+                        } catch (err) {
+                            console.error(`Error checking payment status for order ${orderId}:`, err);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error in checkCODPaymentStatus:', error);
+            }
+        };
+
+        if (isInitialized && hasItems && !loading) {
+            checkCODPaymentStatus();
+        }
+    }, [isInitialized, hasItems, isAuthenticated, user, getPaymentByOrderId, clearCart, getUserCart, loading, isRetrying]);
+
+    // Handle cart item quantity changes with retry logic for concurrency
     const handleQuantityChange = async (itemId: number, newQuantity: number) => {
         if (newQuantity < 1) return;
 
-        try {
-            const update: CartUpdateQuantityDTO = { quantity: newQuantity };
-            await updateCartItemQuantity(itemId, update);
-            toast.success('Đã cập nhật số lượng');
-        } catch (error) {
-            console.error('Error updating quantity:', error);
-            toast.error('Không thể cập nhật số lượng');
+        let attempts = 0;
+        const maxAttempts = 3;
+
+        while (attempts < maxAttempts) {
+            try {
+                const update: CartUpdateQuantityDTO = { quantity: newQuantity };
+                await updateCartItemQuantity(itemId, update);
+                toast.success('Đã cập nhật số lượng');
+                break;
+            } catch (error) {
+                attempts++;
+                console.error(`Error updating quantity (attempt ${attempts}):`, error);
+
+                if (attempts === maxAttempts) {
+                    toast.error('Không thể cập nhật số lượng. Vui lòng thử lại sau.');
+                } else {
+                    await wait(RETRY_DELAY);
+                }
+            }
         }
     };
 
+    // Handle cart item removal with retry logic
     const handleRemoveItem = async (itemId: number) => {
         if (!itemId || isNaN(itemId)) {
             console.error('Invalid cart item ID:', itemId);
@@ -229,12 +352,24 @@ const CartPage: React.FC = () => {
             return;
         }
 
-        try {
-            await removeCartItem(itemId);
-            toast.success('Đã xóa sản phẩm khỏi giỏ hàng');
-        } catch (error) {
-            console.error('Error removing item:', error);
-            toast.error('Không thể xóa sản phẩm');
+        let attempts = 0;
+        const maxAttempts = 3;
+
+        while (attempts < maxAttempts) {
+            try {
+                await removeCartItem(itemId);
+                toast.success('Đã xóa sản phẩm khỏi giỏ hàng');
+                break;
+            } catch (error) {
+                attempts++;
+                console.error(`Error removing item (attempt ${attempts}):`, error);
+
+                if (attempts === maxAttempts) {
+                    toast.error('Không thể xóa sản phẩm. Vui lòng thử lại sau.');
+                } else {
+                    await wait(RETRY_DELAY);
+                }
+            }
         }
     };
 
@@ -277,10 +412,17 @@ const CartPage: React.FC = () => {
         }
     };
 
-    if (loading && !isInitialized) {
+    if ((loading && !isInitialized) || isRetrying) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-secondary">
-                <LoadingSpinner size="large" />
+                <div className="flex flex-col items-center">
+                    <LoadingSpinner size="large" />
+                    {isRetrying && (
+                        <p className="mt-4 text-gray-600 dark:text-gray-300">
+                            Đang xử lý giỏ hàng... (Lần thử {retryAttempts + 1}/{MAX_RETRY_ATTEMPTS})
+                        </p>
+                    )}
+                </div>
             </div>
         );
     }
@@ -332,8 +474,11 @@ const CartPage: React.FC = () => {
                             title="Đã có lỗi xảy ra"
                             description={`Không thể tải dữ liệu giỏ hàng: ${error}`}
                             action={{
-                                label: 'Quay lại cửa hàng',
-                                onClick: () => navigate('/products'),
+                                label: 'Thử lại',
+                                onClick: async () => {
+                                    clearCartError();
+                                    await getUserCart();
+                                },
                             }}
                             icon={
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

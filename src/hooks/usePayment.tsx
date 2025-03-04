@@ -292,6 +292,30 @@ const usePayment = () => {
         dispatch(resetPaymentState());
     }, [dispatch]);
 
+    // hooks/usePayment.ts
+    const confirmDeliveryWithOtp = useCallback(async (orderId: number, otp: string): Promise<PaymentResponseDTO> => {
+        if (!isAuthenticated || !user?.userId) {
+            throw new Error('Bạn cần đăng nhập để xác nhận giao hàng');
+        }
+
+        dispatch(fetchPaymentStart());
+        try {
+            const userId = user.userId;
+            console.log('Confirming delivery with OTP for order:', orderId);
+
+            const response = await PaymentService.confirmDeliveryWithOtp(userId, orderId, otp);
+            dispatch(fetchPaymentByIdSuccess(response));
+            toast.success('Xác nhận giao hàng thành công');
+            return response;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Không thể xác nhận giao hàng';
+            console.error('Delivery confirmation error:', error);
+            dispatch(fetchPaymentFailure(message));
+            toast.error(message);
+            throw error;
+        }
+    }, [dispatch, isAuthenticated, user]);
+
     return {
         // State values
         payments,
@@ -323,7 +347,10 @@ const usePayment = () => {
         hasPaymentUrl,
         clearError,
         resetPayment,
-        resetPaymentState: resetPaymentStateAction
+        resetPaymentState: resetPaymentStateAction,
+
+
+        confirmDeliveryWithOtp
     };
 };
 

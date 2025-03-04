@@ -6,21 +6,25 @@ import useAuth from '../../hooks/useAuth';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { toast } from 'react-hot-toast';
 import { motion } from 'framer-motion';
-import { FiChevronLeft, FiCreditCard } from 'react-icons/fi';
+import { FiChevronLeft, FiCreditCard, FiInfo, FiAlertCircle, FiTruck, FiDollarSign, FiChevronDown, FiChevronUp } from 'react-icons/fi';
 
 const PaymentPage: React.FC = () => {
     const { orderId } = useParams<{ orderId: string }>();
     const { state } = useLocation();
     const navigate = useNavigate();
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, user } = useAuth();
     const { createPayment, loading: paymentLoading } = usePayment();
     const { paymentMethods, getActivePaymentMethods, loading: paymentMethodLoading } = usePaymentMethod();
 
     const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<number | null>(null);
     const [totalAmount, setTotalAmount] = useState<number>(0);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [showCodInfo, setShowCodInfo] = useState(false);
 
     const selectedPaymentMethod = paymentMethods.find(method => method.methodId === selectedPaymentMethodId);
+    const isCodMethod = selectedPaymentMethod?.code === 'COD';
+    const isVnpayMethod = selectedPaymentMethod?.code === 'VNPAY';
+    const isBankTransferMethod = selectedPaymentMethod?.code === 'BANK_TRANSFER';
 
     useEffect(() => {
         if (!isAuthenticated) {
@@ -52,6 +56,19 @@ const PaymentPage: React.FC = () => {
         }
     }, [getActivePaymentMethods, paymentMethods, paymentMethodLoading]);
 
+    const getPaymentMethodIcon = (code: string) => {
+        switch (code) {
+            case 'VNPAY':
+                return <FiDollarSign className="w-6 h-6 text-primary" />;
+            case 'COD':
+                return <FiTruck className="w-6 h-6 text-primary" />;
+            case 'BANK_TRANSFER':
+                return <FiCreditCard className="w-6 h-6 text-primary" />;
+            default:
+                return <FiCreditCard className="w-6 h-6 text-primary" />;
+        }
+    };
+
     const handlePayment = async () => {
         if (!orderId || !selectedPaymentMethodId) {
             toast.error('Thông tin thanh toán không đầy đủ');
@@ -61,26 +78,145 @@ const PaymentPage: React.FC = () => {
         setIsProcessing(true);
         try {
             const paymentData = {
-                userId: 1, // Thay bằng userId thực tế từ auth
+                userId: user?.userId || 1,
                 orderId: parseInt(orderId),
                 methodId: selectedPaymentMethodId,
                 amount: totalAmount,
-                returnUrl: `${window.location.origin}/payment/success`
+                returnUrl: `${window.location.origin}/payment/result`
             };
+
             const paymentResponse = await createPayment(paymentData);
 
             if (paymentResponse.paymentUrl) {
-                // Chuyển hướng trực tiếp đến URL thanh toán (VNPay hoặc các phương thức khác)
+                // Chuyển hướng đến URL thanh toán (VNPay)
                 window.location.href = paymentResponse.paymentUrl;
+            } else if (isCodMethod) {
+                // Store the COD order ID in localStorage to clear cart later
+                const recentCODOrders = JSON.parse(localStorage.getItem('recentCODOrders') || '[]');
+                if (!recentCODOrders.includes(parseInt(orderId))) {
+                    recentCODOrders.push(parseInt(orderId));
+                    localStorage.setItem('recentCODOrders', JSON.stringify(recentCODOrders));
+                }
+
+                // Xử lý riêng cho COD
+                toast.success('Đã xác nhận đơn hàng với phương thức COD!');
+                navigate('/payment/result', {
+                    state: {
+                        orderId: parseInt(orderId),
+                        paymentId: paymentResponse.paymentId,
+                        paymentMethod: 'COD',
+                        paymentStatus: 'PENDING',
+                        message: 'Đơn hàng của bạn đang được xử lý. Vui lòng thanh toán khi nhận hàng.',
+                        transactionCode: paymentResponse.transactionCode
+                    }
+                });
+            } else if (isBankTransferMethod) {
+                // Xử lý riêng cho chuyển khoản ngân hàng
+                navigate('/payment/bank-transfer-info', {
+                    state: {
+                        orderId: parseInt(orderId),
+                        paymentId: paymentResponse.paymentId,
+                        transactionCode: paymentResponse.transactionCode,
+                        amount: totalAmount
+                    }
+                });
             } else {
+                // Xử lý các phương thức thanh toán khác
                 toast.success('Thanh toán thành công!');
-                navigate('/order-success', { state: { orderId: parseInt(orderId) } });
+                navigate('/order-success', {
+                    state: {
+                        orderId: parseInt(orderId),
+                        paymentId: paymentResponse.paymentId
+                    }
+                });
             }
         } catch (error) {
             console.error('Error processing payment:', error);
             toast.error('Thanh toán thất bại. Vui lòng thử lại sau.');
         } finally {
             setIsProcessing(false);
+        }
+    };
+
+    const renderPaymentMethodInfo = () => {
+        if (!selectedPaymentMethod) return null;
+
+        switch (selectedPaymentMethod.code) {
+            case 'COD':
+                return (
+                    <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                        <div className="flex items-start">
+                            <FiInfo className="w-5 h-5 text-blue-500 mt-0.5 mr-2 flex-shrink-0" />
+                            <div>
+                                <h4 className="font-medium text-blue-800 dark:text-blue-300">Thanh toán khi nhận hàng (COD)</h4>
+                                <p className="text-sm text-blue-700 dark:text-blue-400 mt-1">
+                                    Bạn sẽ thanh toán khi nhận được hàng. Nhân viên giao hàng sẽ liên hệ trước khi giao.
+                                </p>
+                                <div className="mt-2">
+                                    <button
+                                        onClick={() => setShowCodInfo(!showCodInfo)}
+                                        className="text-sm text-primary font-medium hover:underline inline-flex items-center"
+                                    >
+                                        <span>{showCodInfo ? "Ẩn thông tin chi tiết" : "Xem thêm thông tin"}</span>
+                                        {showCodInfo ?
+                                            <FiChevronUp className="ml-1" /> :
+                                            <FiChevronDown className="ml-1" />
+                                        }
+                                    </button>
+
+                                    {showCodInfo && (
+                                        <div className="mt-3 text-sm text-blue-700 dark:text-blue-400 p-3 bg-blue-100 dark:bg-blue-900/30 rounded">
+                                            <p className="mb-2">• Đơn hàng sẽ được giao trong vòng 3-5 ngày làm việc.</p>
+                                            <p className="mb-2">• Phí COD sẽ được tính vào tổng giá trị đơn hàng.</p>
+                                            <p className="mb-2">• Vui lòng kiểm tra hàng trước khi thanh toán.</p>
+                                            <p>• Bạn sẽ nhận được mã OTP để xác nhận khi nhận hàng.</p>
+                                        </div>
+                                    )}
+
+                                    <button
+                                        onClick={() => navigate('/payment/cod-info')}
+                                        className="text-sm text-primary font-medium hover:underline mt-2 inline-flex items-center ml-4"
+                                    >
+                                        <span>Xem chi tiết quy trình COD</span>
+                                        <FiChevronLeft className="transform rotate-180 ml-1" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            case 'VNPAY':
+                return (
+                    <div className="mt-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                        <div className="flex items-start">
+                            <FiInfo className="w-5 h-5 text-green-500 mt-0.5 mr-2 flex-shrink-0" />
+                            <div>
+                                <h4 className="font-medium text-green-800 dark:text-green-300">Thanh toán trực tuyến qua VNPAY</h4>
+                                <p className="text-sm text-green-700 dark:text-green-400 mt-1">
+                                    Bạn sẽ được chuyển đến cổng thanh toán VNPAY để hoàn tất thanh toán. Sau khi thanh toán thành công,
+                                    bạn sẽ được chuyển về trang xác nhận.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            case 'BANK_TRANSFER':
+                return (
+                    <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                        <div className="flex items-start">
+                            <FiInfo className="w-5 h-5 text-yellow-500 mt-0.5 mr-2 flex-shrink-0" />
+                            <div>
+                                <h4 className="font-medium text-yellow-800 dark:text-yellow-300">Thanh toán chuyển khoản ngân hàng</h4>
+                                <p className="text-sm text-yellow-700 dark:text-yellow-400 mt-1">
+                                    Sau khi đặt hàng, bạn sẽ nhận được thông tin tài khoản để chuyển khoản. Đơn hàng sẽ được xử lý
+                                    sau khi xác nhận thanh toán thành công.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            default:
+                return null;
         }
     };
 
@@ -145,7 +281,7 @@ const PaymentPage: React.FC = () => {
                                 <div className="p-4 bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded-lg">
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-3">
-                                            <FiCreditCard className="w-6 h-6 text-primary" />
+                                            {getPaymentMethodIcon(selectedPaymentMethod.code)}
                                             <div>
                                                 <p className="font-medium text-textDark dark:text-textLight">{selectedPaymentMethod.name}</p>
                                                 <p className="text-sm text-secondary/70 dark:text-textLight/70">{selectedPaymentMethod.code}</p>
@@ -162,6 +298,8 @@ const PaymentPage: React.FC = () => {
                             ) : (
                                 <p className="text-gray-600 dark:text-gray-300">Chưa chọn phương thức thanh toán</p>
                             )}
+
+                            {renderPaymentMethodInfo()}
                         </div>
                     </div>
 
@@ -174,11 +312,27 @@ const PaymentPage: React.FC = () => {
                             <LoadingSpinner size="small" color="white" />
                         ) : (
                             <>
-                                <span className="mr-2">Thanh toán ngay</span>
-                                <FiCreditCard className="w-5 h-5" />
+                                <span className="mr-2">
+                                    {isCodMethod ? 'Xác nhận đặt hàng' : 'Thanh toán ngay'}
+                                </span>
+                                {isCodMethod ? <FiTruck className="w-5 h-5" /> : <FiCreditCard className="w-5 h-5" />}
                             </>
                         )}
                     </button>
+
+                    {isVnpayMethod && (
+                        <div className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400 flex items-center justify-center">
+                            <FiAlertCircle className="w-4 h-4 mr-1" />
+                            <span>Bạn sẽ được chuyển đến trang thanh toán của VNPAY</span>
+                        </div>
+                    )}
+
+                    {isCodMethod && (
+                        <div className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400 flex items-center justify-center">
+                            <FiAlertCircle className="w-4 h-4 mr-1" />
+                            <span>Đơn hàng sẽ được gửi đi khi bạn nhấn xác nhận đặt hàng</span>
+                        </div>
+                    )}
                 </motion.div>
             </div>
         </div>

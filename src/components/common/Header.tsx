@@ -280,7 +280,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                                             Hồ sơ cá nhân
                                         </NavLink>
                                         <NavLink
-                                            to="/orders"
+                                            to="/order/list"
                                             className={({ isActive }) =>
                                                 `block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 ${
                                                     isActive ? 'text-primary/80 font-bold' : ''
@@ -417,7 +417,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                                 )}
                             </NavLink>
                             <NavLink
-                                to="/orders"
+                                to="/order/list"
                                 className={({ isActive }) =>
                                     `block py-2 px-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 rounded mb-1 ${
                                         isActive ? 'text-primary/80 font-bold' : ''

@@ -23,7 +23,7 @@ export interface CreateOrderDTO {
 }
 
 export interface CancelOrderDTO {
-    reason: string;
+    cancelReason: string;
 }
 
 export interface OrderItemDTO {

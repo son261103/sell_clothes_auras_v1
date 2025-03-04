@@ -1,7 +1,8 @@
-import { RouteObject } from 'react-router-dom';
+import {RouteObject} from 'react-router-dom';
 import MainLayout from '../layouts/MainLayout';
 import PaymentPage from '../pages/payment/PaymentPage';
 import PaymentConfirmPage from '../pages/payment/PaymentConfirmPage';
+import PaymentResultPage from "../pages/payment/PaymentResultPage.tsx";
 
 /**
  * Payment related routes
@@ -9,15 +10,19 @@ import PaymentConfirmPage from '../pages/payment/PaymentConfirmPage';
 const paymentRoutes: RouteObject[] = [
     {
         path: '/payment',
-        element: <MainLayout />,
+        element: <MainLayout/>,
         children: [
             {
                 path: ':orderId', // Đường dẫn tương đối: /payment/:orderId
-                element: <PaymentPage />,
+                element: <PaymentPage/>,
             },
             {
                 path: 'confirm', // Đường dẫn tương đối: /payment/confirm
-                element: <PaymentConfirmPage />,
+                element: <PaymentConfirmPage/>,
+            },
+            {
+                path: 'result',
+                element: <PaymentResultPage/>,
             },
         ],
     },
