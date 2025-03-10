@@ -6,6 +6,7 @@ import useUserAddress from '../../hooks/useUserAddress';
 import useShipping from '../../hooks/useShipping';
 import usePaymentMethod from '../../hooks/usePaymentMethod';
 import useAuth from '../../hooks/useAuth';
+import useCoupon from '../../hooks/useCoupon';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import EmptyState from '../../components/common/EmptyState';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
@@ -24,6 +25,7 @@ import OrderPreview from '../../components/order/OrderPreview';
 import AddressForm from '../../components/order/AddressForm';
 import ShippingMethodForm from '../../components/order/ShippingMethodForm';
 import PaymentMethodForm from '../../components/payment/PaymentMethodForm';
+import CouponInput from '../../components/order/CouponInput';
 
 // Animation variants for sections
 const containerVariants = {
@@ -79,6 +81,11 @@ const OrderPage: React.FC = () => {
     } = useUserAddress();
     const { shippingMethods, getAllShippingMethods, loading: shippingLoading } = useShipping();
     const { paymentMethods, getActivePaymentMethods, loading: paymentMethodLoading } = usePaymentMethod();
+    const {
+        hasAppliedCoupon,
+        appliedCouponCode,
+        appliedCouponDiscountAmount,
+    } = useCoupon();
 
     const [showAddressModal, setShowAddressModal] = useState(false);
     const [showAddressListModal, setShowAddressListModal] = useState(false);
@@ -95,6 +102,7 @@ const OrderPage: React.FC = () => {
     const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<number | null>(null);
     const [orderNote, setOrderNote] = useState('');
     const [hasFetchedAddresses, setHasFetchedAddresses] = useState(false);
+    const [couponDiscount, setCouponDiscount] = useState(0);
 
     const selectedAddress = addresses.find(addr => addr.addressId === selectedAddressId);
     const selectedShippingMethod = shippingMethods.find(method => method.id === selectedShippingMethodId);
@@ -108,6 +116,15 @@ const OrderPage: React.FC = () => {
             mirror: false
         });
     }, []);
+
+    // Update coupon discount when the applied coupon changes
+    useEffect(() => {
+        if (hasAppliedCoupon && appliedCouponDiscountAmount) {
+            setCouponDiscount(appliedCouponDiscountAmount);
+        } else {
+            setCouponDiscount(0);
+        }
+    }, [hasAppliedCoupon, appliedCouponDiscountAmount]);
 
     // Lấy dữ liệu địa chỉ
     useEffect(() => {
@@ -223,6 +240,10 @@ const OrderPage: React.FC = () => {
         setShowOrderConfirmModal(true);
     };
 
+    const handleCouponApplied = (discount: number) => {
+        setCouponDiscount(discount);
+    };
+
     const handleCreateOrder = async () => {
         setShowOrderConfirmModal(false);
 
@@ -236,7 +257,7 @@ const OrderPage: React.FC = () => {
             return;
         }
 
-        const totalAmount = totalPrice + shippingFee;
+        const totalAmount = totalPrice + shippingFee - couponDiscount;
 
         setProcessingOrder(true);
         try {
@@ -245,7 +266,8 @@ const OrderPage: React.FC = () => {
                 shippingMethodId: selectedShippingMethodId,
                 note: orderNote.trim() || undefined,
                 totalAmount: totalAmount,
-                paymentMethodId: selectedPaymentMethodId
+                paymentMethodId: selectedPaymentMethodId,
+                couponCode: appliedCouponCode || undefined
             };
             const createdOrder = await createOrder(orderData);
             toast.success('Đơn hàng đã được tạo thành công!');
@@ -685,6 +707,8 @@ const OrderPage: React.FC = () => {
                                         orderItems={validCartItems}
                                         subtotal={totalPrice}
                                         shippingFee={shippingFee}
+                                        couponDiscount={couponDiscount}
+                                        couponCode={appliedCouponCode}
                                         totalAmount={totalPrice + shippingFee}
                                         address={selectedAddress || null}
                                         orderNote={orderNote}
@@ -692,6 +716,18 @@ const OrderPage: React.FC = () => {
                                         paymentMethod={selectedPaymentMethod || null}
                                     />
                                 </motion.div>
+
+                                {/* Coupon Input Component */}
+                                <motion.div
+                                    variants={itemVariants}
+                                    initial={{ opacity: 0, x: 20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: 0.25 }}
+                                    className="sticky top-6 mt-6"
+                                >
+                                    <CouponInput orderTotal={totalPrice} onCouponApplied={handleCouponApplied} />
+                                </motion.div>
+
                                 <motion.div
                                     variants={itemVariants}
                                     initial={{ opacity: 0, x: 20 }}
@@ -703,6 +739,7 @@ const OrderPage: React.FC = () => {
                                         itemCount={validCartItems.length}
                                         subtotal={totalPrice}
                                         shippingFee={shippingFee}
+                                        couponDiscount={couponDiscount}
                                         totalPrice={totalPrice + shippingFee}
                                         onCreateOrder={handleInitiateOrder}
                                         loading={processingOrder || orderLoading}
@@ -846,7 +883,7 @@ const OrderPage: React.FC = () => {
             <ConfirmDialog
                 isOpen={showOrderConfirmModal}
                 title="Xác nhận đặt hàng"
-                message={`Bạn có chắc chắn muốn đặt đơn hàng với tổng giá trị ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalPrice + shippingFee)}?`}
+                message={`Bạn có chắc chắn muốn đặt đơn hàng với tổng giá trị ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalPrice + shippingFee - couponDiscount)}${couponDiscount > 0 ? ` (đã giảm ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(couponDiscount)})` : ''}?`}
                 confirmText="Đặt hàng và thanh toán"
                 cancelText="Hủy"
                 type="success"

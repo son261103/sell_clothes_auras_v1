@@ -35,14 +35,12 @@ const LoginPage: React.FC = () => {
 
     // Log trạng thái ban đầu để debug
     useEffect(() => {
-        console.log('Auth state loaded:', { loading, error });
     }, [loading, error]);
 
     const handleInputChange = (
         e: React.ChangeEvent<HTMLInputElement>,
         setter: React.Dispatch<React.SetStateAction<string>>
     ) => {
-        console.log('Input changing:', e.target.name, e.target.value);
         setter(e.target.value);
     };
 

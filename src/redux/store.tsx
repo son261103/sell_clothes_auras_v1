@@ -7,6 +7,7 @@ import userAddressReducer from "./slices/userAddressSlice.tsx";
 import shippingReducer from "./slices/shippingSlice.tsx";
 import paymentReducer from "./slices/paymentSlice.tsx";
 import paymentMethodReducer from "./slices/paymentMethodSlice.tsx";
+import couponReducer from "./slices/couponSlice.tsx";
 
 export const store = configureStore({
     reducer: {
@@ -18,6 +19,7 @@ export const store = configureStore({
         userAddress: userAddressReducer,
         payment: paymentReducer,
         paymentMethod: paymentMethodReducer,
+        coupon: couponReducer,
         // Thêm các reducer khác nếu cần
     },
 });

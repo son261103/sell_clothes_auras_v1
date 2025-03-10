@@ -1,11 +1,12 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { FiShoppingBag, FiCreditCard } from 'react-icons/fi';
+import { FiShoppingBag, FiCreditCard, FiTag, FiPercent } from 'react-icons/fi';
 
 interface OrderSummaryProps {
     itemCount: number;
     subtotal: number;
     shippingFee: number;
+    couponDiscount?: number;
     totalPrice: number;
     onCreateOrder: () => void;
     loading: boolean;
@@ -15,10 +16,15 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
                                                        itemCount,
                                                        subtotal,
                                                        shippingFee,
+                                                       couponDiscount = 0,
                                                        totalPrice,
                                                        onCreateOrder,
                                                        loading
                                                    }) => {
+    const formatter = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
+    const hasCoupon = couponDiscount > 0;
+    const totalWithDiscount = totalPrice - couponDiscount;
+
     return (
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-6 shadow-xl">
             <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
@@ -34,21 +40,46 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({
                 <div className="flex justify-between">
                     <span className="text-gray-500 dark:text-gray-400">Tạm tính:</span>
                     <span className="text-gray-900 dark:text-white">
-                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(subtotal)}
+                        {formatter.format(subtotal)}
                     </span>
                 </div>
                 <div className="flex justify-between">
                     <span className="text-gray-500 dark:text-gray-400">Phí vận chuyển:</span>
                     <span className="text-gray-900 dark:text-white">
-                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(shippingFee)}
+                        {formatter.format(shippingFee)}
                     </span>
                 </div>
+
+                {hasCoupon && (
+                    <motion.div
+                        className="flex justify-between text-green-600 dark:text-green-400"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        transition={{ duration: 0.3 }}
+                    >
+                        <span className="flex items-center">
+                            <FiTag className="w-4 h-4 mr-1.5" />
+                            Giảm giá:
+                        </span>
+                        <span>- {formatter.format(couponDiscount)}</span>
+                    </motion.div>
+                )}
+
                 <div className="flex justify-between border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
                     <span className="text-base font-medium text-gray-900 dark:text-white">Tổng thanh toán:</span>
                     <span className="text-lg font-bold text-primary">
-                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalPrice)}
+                        {formatter.format(hasCoupon ? totalWithDiscount : totalPrice)}
                     </span>
                 </div>
+
+                {hasCoupon && (
+                    <div className="flex justify-end">
+                        <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-1 rounded-full flex items-center">
+                            <FiPercent className="w-3 h-3 mr-1" />
+                            Đã áp dụng mã giảm giá
+                        </span>
+                    </div>
+                )}
             </div>
 
             <motion.button
