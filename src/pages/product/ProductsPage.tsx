@@ -372,7 +372,7 @@ const ProductsPage: React.FC = () => {
 
     return (
         <motion.div
-            className="min-h-screen bg-gray-50 dark:bg-secondary transition-colors duration-300"
+            className="min-h-screen transition-colors duration-300"
             variants={pageVariants}
             initial="hidden"
             animate="visible"

@@ -172,7 +172,7 @@ const PaymentConfirmPage: React.FC = () => {
     }
 
     return (
-        <div className="flex flex-col items-center justify-center  bg-lightBackground dark:bg-darkBackground p-4">
+        <div className="flex flex-col items-center justify-center p-4">
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}

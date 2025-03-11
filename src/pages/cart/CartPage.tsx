@@ -1,16 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, {useEffect, useState} from 'react';
+import {useNavigate} from 'react-router-dom';
+import {motion, AnimatePresence} from 'framer-motion';
 import useCart from '../../hooks/useCart';
 import useAuth from '../../hooks/useAuth';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import EmptyState from '../../components/common/EmptyState';
 import 'aos/dist/aos.css';
 import AOS from 'aos';
-import { toast } from 'react-hot-toast';
-import { FiMinus, FiPlus, FiTrash2, FiChevronLeft, FiShoppingBag, FiPackage, FiShield, FiTruck } from 'react-icons/fi';
-import { CartItemDTO, CartUpdateQuantityDTO } from '../../types/cart.types';
-import { PaymentStatus } from '../../enum/PaymentStatus';
+import {toast} from 'react-hot-toast';
+import {FiMinus, FiPlus, FiTrash2, FiChevronLeft, FiShoppingBag, FiPackage, FiShield, FiTruck} from 'react-icons/fi';
+import {CartItemDTO, CartUpdateQuantityDTO} from '../../types/cart.types';
+import {PaymentStatus} from '../../enum/PaymentStatus';
 import usePayment from '../../hooks/usePayment';
 
 interface CartItemProps {
@@ -19,18 +19,19 @@ interface CartItemProps {
     onRemove: (itemId: number) => void;
 }
 
-const CartItem: React.FC<CartItemProps> = ({ item, onQuantityChange, onRemove }) => {
+const CartItem: React.FC<CartItemProps> = ({item, onQuantityChange, onRemove}) => {
     // Check for basic required fields instead of variant.product
     if (!item || !item.itemId || !item.productName) {
         console.warn('Invalid or missing cart item data:', item);
         return (
-            <div className="flex flex-col sm:flex-row border border-red-300 dark:border-red-700 rounded-lg p-4 bg-white dark:bg-gray-800 shadow-sm text-center">
+            <div
+                className="flex flex-col sm:flex-row border border-red-300 dark:border-red-700 rounded-lg p-4 bg-white dark:bg-gray-800 shadow-sm text-center">
                 <p className="text-red-600 dark:text-red-400">Dữ liệu sản phẩm không hợp lệ hoặc không tồn tại.</p>
             </div>
         );
     }
 
-    const { itemId, quantity, productName, imageUrl, unitPrice, color, size, sku, stockQuantity } = item;
+    const {itemId, quantity, productName, imageUrl, unitPrice, color, size, sku, stockQuantity} = item;
     const fallbackImage = 'https://placehold.co/400x400/e2e8f0/1e293b?text=No+Image';
 
     const displayName = productName || 'Sản phẩm không xác định';
@@ -38,7 +39,8 @@ const CartItem: React.FC<CartItemProps> = ({ item, onQuantityChange, onRemove })
     const displayImage = imageUrl || fallbackImage;
 
     return (
-        <div className="flex flex-col sm:flex-row border border-gray-100 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800 shadow-md transition-all duration-200 hover:shadow-lg">
+        <div
+            className="flex flex-col sm:flex-row border border-gray-100 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800 shadow-md transition-all duration-200 hover:shadow-lg">
             <div className="flex-shrink-0 w-full sm:w-36 h-36 mb-4 sm:mb-0 sm:mr-6">
                 <div className="w-full h-full relative rounded-md overflow-hidden">
                     <img
@@ -50,7 +52,8 @@ const CartItem: React.FC<CartItemProps> = ({ item, onQuantityChange, onRemove })
                         }}
                     />
                     {displayImage === fallbackImage && (
-                        <p className="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400 bg-opacity-50">No Image</p>
+                        <p className="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400 bg-opacity-50">No
+                            Image</p>
                     )}
                 </div>
             </div>
@@ -80,7 +83,7 @@ const CartItem: React.FC<CartItemProps> = ({ item, onQuantityChange, onRemove })
                                 className="p-2 rounded-full border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
                                 aria-label="Decrease quantity"
                             >
-                                <FiMinus className="w-3 h-3" />
+                                <FiMinus className="w-3 h-3"/>
                             </button>
                             <span className="mx-3 w-8 text-center text-gray-900 dark:text-white">{quantity}</span>
                             <button
@@ -89,12 +92,12 @@ const CartItem: React.FC<CartItemProps> = ({ item, onQuantityChange, onRemove })
                                 className="p-2 rounded-full border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
                                 aria-label="Increase quantity"
                             >
-                                <FiPlus className="w-3 h-3" />
+                                <FiPlus className="w-3 h-3"/>
                             </button>
                         </div>
                         <div className="flex items-center justify-between w-full sm:w-auto">
                             <div className="text-base font-medium text-primary sm:mr-6">
-                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(
+                                {new Intl.NumberFormat('vi-VN', {style: 'currency', currency: 'VND'}).format(
                                     price * quantity
                                 )}
                             </div>
@@ -103,7 +106,7 @@ const CartItem: React.FC<CartItemProps> = ({ item, onQuantityChange, onRemove })
                                 className="p-2 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors duration-200"
                                 aria-label="Remove item"
                             >
-                                <FiTrash2 className="w-5 h-5" />
+                                <FiTrash2 className="w-5 h-5"/>
                             </button>
                         </div>
                     </div>
@@ -119,11 +122,11 @@ interface OrderSummaryProps {
     onCheckout: () => void;
 }
 
-const OrderSummary: React.FC<OrderSummaryProps> = ({ itemCount, totalPrice, onCheckout }) => {
+const OrderSummary: React.FC<OrderSummaryProps> = ({itemCount, totalPrice, onCheckout}) => {
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 p-6 shadow-xl">
+        <div className=" rounded-xl border border-gray-100 dark:border-gray-700 p-6 shadow-xl">
             <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-                <FiShoppingBag className="w-5 h-5 mr-2" />
+                <FiShoppingBag className="w-5 h-5 mr-2"/>
                 Tóm tắt đơn hàng
             </h2>
 
@@ -135,7 +138,7 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({ itemCount, totalPrice, onCh
                 <div className="flex justify-between border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
                     <span className="text-base font-medium text-gray-900 dark:text-white">Tổng cộng:</span>
                     <span className="text-lg font-bold text-primary">
-                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalPrice || 0)}
+                        {new Intl.NumberFormat('vi-VN', {style: 'currency', currency: 'VND'}).format(totalPrice || 0)}
                     </span>
                 </div>
             </div>
@@ -143,15 +146,15 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({ itemCount, totalPrice, onCh
             <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-2">
                 <ul className="space-y-2 mb-6">
                     <li className="flex items-start">
-                        <FiTruck className="w-5 h-5 text-primary mr-2 mt-0.5" />
+                        <FiTruck className="w-5 h-5 text-primary mr-2 mt-0.5"/>
                         <span className="text-sm text-gray-600 dark:text-gray-300">Giao hàng miễn phí cho đơn hàng trên 500.000₫</span>
                     </li>
                     <li className="flex items-start">
-                        <FiShield className="w-5 h-5 text-primary mr-2 mt-0.5" />
+                        <FiShield className="w-5 h-5 text-primary mr-2 mt-0.5"/>
                         <span className="text-sm text-gray-600 dark:text-gray-300">Bảo đảm chất lượng sản phẩm</span>
                     </li>
                     <li className="flex items-start">
-                        <FiPackage className="w-5 h-5 text-primary mr-2 mt-0.5" />
+                        <FiPackage className="w-5 h-5 text-primary mr-2 mt-0.5"/>
                         <span className="text-sm text-gray-600 dark:text-gray-300">Đổi trả trong vòng 7 ngày</span>
                     </li>
                 </ul>
@@ -159,11 +162,11 @@ const OrderSummary: React.FC<OrderSummaryProps> = ({ itemCount, totalPrice, onCh
                 <motion.button
                     onClick={onCheckout}
                     className="w-full bg-primary text-white py-3 rounded-lg hover:bg-primary/90 transition duration-300 shadow-md flex items-center justify-center"
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                    whileHover={{scale: 1.02}}
+                    whileTap={{scale: 0.98}}
                 >
                     <span className="mr-2">Tiến hành đặt hàng</span>
-                    <FiChevronLeft className="w-5 h-5 transform rotate-180" />
+                    <FiChevronLeft className="w-5 h-5 transform rotate-180"/>
                 </motion.button>
             </div>
         </div>
@@ -175,7 +178,7 @@ const CartPage: React.FC = () => {
     const [isInitialized, setIsInitialized] = useState<boolean>(false);
     const [isRetrying, setIsRetrying] = useState<boolean>(false);
     const [retryAttempts, setRetryAttempts] = useState<number>(0);
-    const { isAuthenticated, user } = useAuth();
+    const {isAuthenticated, user} = useAuth();
     const {
         cartItems,
         loading,
@@ -189,7 +192,7 @@ const CartPage: React.FC = () => {
         clearCartError,
         clearCart
     } = useCart();
-    const { getPaymentByOrderId } = usePayment();
+    const {getPaymentByOrderId} = usePayment();
 
     // Maximum number of retry attempts
     const MAX_RETRY_ATTEMPTS = 3;
@@ -200,7 +203,7 @@ const CartPage: React.FC = () => {
     const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
     useEffect(() => {
-        AOS.init({ duration: 800, once: true });
+        AOS.init({duration: 800, once: true});
     }, []);
 
     // Initial cart data loading
@@ -327,7 +330,7 @@ const CartPage: React.FC = () => {
 
         while (attempts < maxAttempts) {
             try {
-                const update: CartUpdateQuantityDTO = { quantity: newQuantity };
+                const update: CartUpdateQuantityDTO = {quantity: newQuantity};
                 await updateCartItemQuantity(itemId, update);
                 toast.success('Đã cập nhật số lượng');
                 break;
@@ -388,7 +391,7 @@ const CartPage: React.FC = () => {
 
     // Page animation variants
     const pageVariants = {
-        hidden: { opacity: 0 },
+        hidden: {opacity: 0},
         visible: {
             opacity: 1,
             transition: {
@@ -399,16 +402,16 @@ const CartPage: React.FC = () => {
         },
         exit: {
             opacity: 0,
-            transition: { duration: 0.3 }
+            transition: {duration: 0.3}
         }
     };
 
     const contentVariants = {
-        hidden: { opacity: 0, y: 20 },
+        hidden: {opacity: 0, y: 20},
         visible: {
             opacity: 1,
             y: 0,
-            transition: { duration: 0.5 }
+            transition: {duration: 0.5}
         }
     };
 
@@ -416,7 +419,7 @@ const CartPage: React.FC = () => {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-secondary">
                 <div className="flex flex-col items-center">
-                    <LoadingSpinner size="large" />
+                    <LoadingSpinner size="large"/>
                     {isRetrying && (
                         <p className="mt-4 text-gray-600 dark:text-gray-300">
                             Đang xử lý giỏ hàng... (Lần thử {retryAttempts + 1}/{MAX_RETRY_ATTEMPTS})
@@ -430,7 +433,7 @@ const CartPage: React.FC = () => {
     if (!isAuthenticated) {
         return (
             <motion.div
-                className="min-h-screen bg-gray-50 dark:bg-secondary py-12"
+                className="min-h-screen  py-12"
                 initial="hidden"
                 animate="visible"
                 exit="exit"
@@ -446,10 +449,12 @@ const CartPage: React.FC = () => {
                                 onClick: () => navigate('/login'),
                             }}
                             icon={
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-                                    <polyline points="10 17 15 12 10 7" />
-                                    <line x1="15" y1="12" x2="3" y2="12" />
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16" viewBox="0 0 24 24"
+                                     fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+                                     strokeLinejoin="round">
+                                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                                    <polyline points="10 17 15 12 10 7"/>
+                                    <line x1="15" y1="12" x2="3" y2="12"/>
                                 </svg>
                             }
                         />
@@ -462,7 +467,7 @@ const CartPage: React.FC = () => {
     if (error) {
         return (
             <motion.div
-                className="min-h-screen bg-gray-50 dark:bg-secondary py-12"
+                className="min-h-screen py-12"
                 initial="hidden"
                 animate="visible"
                 exit="exit"
@@ -481,10 +486,12 @@ const CartPage: React.FC = () => {
                                 },
                             }}
                             icon={
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <circle cx="12" cy="12" r="10" />
-                                    <line x1="12" y1="8" x2="12" y2="12" />
-                                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16" viewBox="0 0 24 24"
+                                     fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+                                     strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <line x1="12" y1="8" x2="12" y2="12"/>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"/>
                                 </svg>
                             }
                         />
@@ -499,7 +506,7 @@ const CartPage: React.FC = () => {
 
     return (
         <motion.div
-            className="min-h-screen bg-gray-50 dark:bg-secondary transition-colors duration-300"
+            className="min-h-screen transition-colors duration-300"
             variants={pageVariants}
             initial="hidden"
             animate="visible"
@@ -512,15 +519,15 @@ const CartPage: React.FC = () => {
                 >
                     <div className="p-4 border-b border-gray-100 dark:border-gray-700">
                         <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
-                            <FiShoppingBag className="mr-2" />
+                            <FiShoppingBag className="mr-2"/>
                             Giỏ Hàng
                             <motion.button
                                 onClick={() => navigate('/products')}
                                 className="ml-auto flex items-center text-primary text-base font-normal hover:underline"
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
+                                whileHover={{scale: 1.05}}
+                                whileTap={{scale: 0.95}}
                             >
-                                <FiChevronLeft className="mr-1" />
+                                <FiChevronLeft className="mr-1"/>
                                 Tiếp tục mua sắm
                             </motion.button>
                         </h1>
@@ -528,7 +535,7 @@ const CartPage: React.FC = () => {
 
                     {loading && isInitialized && (
                         <div className="flex justify-center py-8">
-                            <LoadingSpinner size="medium" />
+                            <LoadingSpinner size="medium"/>
                         </div>
                     )}
 
@@ -542,7 +549,7 @@ const CartPage: React.FC = () => {
                                     onClick: () => navigate('/products'),
                                 }}
                                 icon={
-                                    <FiShoppingBag className="w-16 h-16" />
+                                    <FiShoppingBag className="w-16 h-16"/>
                                 }
                             />
                         </div>
@@ -557,10 +564,10 @@ const CartPage: React.FC = () => {
                                                 {validCartItems.map((item, index) => (
                                                     <motion.div
                                                         key={`cart-item-${item.itemId}`}
-                                                        initial={{ opacity: 0, y: 20 }}
-                                                        animate={{ opacity: 1, y: 0 }}
-                                                        exit={{ opacity: 0, y: -20 }}
-                                                        transition={{ duration: 0.3, delay: index * 0.05 }}
+                                                        initial={{opacity: 0, y: 20}}
+                                                        animate={{opacity: 1, y: 0}}
+                                                        exit={{opacity: 0, y: -20}}
+                                                        transition={{duration: 0.3, delay: index * 0.05}}
                                                     >
                                                         <CartItem
                                                             item={item}

@@ -1,13 +1,15 @@
 import React, { useEffect, useState, FormEvent, ChangeEvent, useRef } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import Navbar from './Navbar';
 import useAuth from '../../hooks/useAuth';
 import useCart from '../../hooks/useCart';
+import useProduct from '../../hooks/useProduct';
 import { GiStarSwirl } from 'react-icons/gi';
 import { FiSearch, FiUser, FiHeart, FiShoppingBag, FiSun, FiMoon, FiMenu, FiX, FiMail } from 'react-icons/fi';
 import { AxiosError } from 'axios';
 import { ApiResponse } from '../../types/auth.types';
+import { ProductResponseDTO } from '../../types/product.types';
 
 interface HeaderProps {
     isDarkMode: boolean;
@@ -19,13 +21,17 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
     const [isScrolled, setIsScrolled] = useState(false);
     const [isSearchActive, setIsSearchActive] = useState(false);
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
+    const [searchTerm, setSearchTerm] = useState(''); // Trạng thái tìm kiếm cục bộ
+    const [suggestions, setSuggestions] = useState<ProductResponseDTO[]>([]); // Gợi ý sản phẩm
     const searchRef = useRef<HTMLDivElement>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
+    const navigate = useNavigate();
 
     const { isAuthenticated, user, signOut, getUserProfile, accessToken } = useAuth();
     const { itemCount } = useCart();
+    const { searchProducts } = useProduct();
 
+    // Fetch user profile if needed
     useEffect(() => {
         const fetchUserIfNeeded = async () => {
             if (accessToken && (!user || !user.username)) {
@@ -35,8 +41,6 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                 } catch (err) {
                     const axiosError = err as AxiosError<ApiResponse>;
                     console.error('Không thể lấy thông tin người dùng:', axiosError);
-
-                    // Chỉ đăng xuất nếu không ở trang profile
                     const currentPath = window.location.pathname;
                     if (axiosError.response?.status === 401 && !currentPath.includes('/profile')) {
                         toast.error('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
@@ -49,16 +53,17 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                 }
             }
         };
-
         fetchUserIfNeeded();
     }, [accessToken, getUserProfile, signOut, user]);
 
+    // Handle scroll effect
     useEffect(() => {
         const handleScroll = () => setIsScrolled(window.scrollY > 50);
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
+    // Close user menu on click outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             const target = event.target as HTMLElement;
@@ -70,11 +75,13 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isUserMenuOpen]);
 
+    // Handle search input focus and click outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             const target = event.target as HTMLElement;
             if (searchRef.current && !searchRef.current.contains(target) && isSearchActive) {
                 setIsSearchActive(false);
+                setSuggestions([]);
             }
         };
         if (isSearchActive && searchInputRef.current) {
@@ -84,30 +91,53 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isSearchActive]);
 
+    // Fetch product suggestions when search term changes (chỉ cho gợi ý, không áp dụng bộ lọc)
+    useEffect(() => {
+        const fetchSuggestions = async () => {
+            if (searchTerm.length >= 3) {
+                try {
+                    const response = await searchProducts({
+                        keyword: searchTerm,
+                        page: 0,
+                        size: 5,
+                    });
+                    setSuggestions(response.content || []);
+                } catch (error) {
+                    console.error('Failed to fetch suggestions:', error);
+                    setSuggestions([]);
+                }
+            } else {
+                setSuggestions([]);
+            }
+        };
+
+        const timer = setTimeout(fetchSuggestions, 300); // Debounce API call by 300ms
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
+    // Handle search form submission
     const handleSearch = (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (searchTerm.trim()) {
-            toast.success(`Tìm kiếm: ${searchTerm}`);
+            // Điều hướng đến trang kết quả tìm kiếm mà không thay đổi trạng thái toàn cục
+            navigate(`/products?search=${encodeURIComponent(searchTerm)}`);
             setSearchTerm('');
             setIsSearchActive(false);
+            setSuggestions([]);
         } else {
             toast.error('Vui lòng nhập từ khóa tìm kiếm');
         }
     };
 
+    // Toggle theme
     const toggleTheme = () => {
-        // Apply dark mode directly to document element with CSS variables
         document.documentElement.classList.toggle('dark', !isDarkMode);
-
-        // Update theme state
         setIsDarkMode(!isDarkMode);
-
-        // Save theme preference to localStorage
         localStorage.setItem('theme', !isDarkMode ? 'dark' : 'light');
-
         toast.success(`Đã chuyển sang chế độ ${isDarkMode ? 'sáng' : 'tối'}`);
     };
 
+    // Handle logout
     const handleLogout = async () => {
         try {
             await signOut();
@@ -137,6 +167,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
             </div>
 
             <div className="container mx-auto px-4 py-2.5 flex items-center justify-between relative">
+                {/* Mobile menu button */}
                 <button
                     className="md:hidden text-primary transition z-50 hover:text-accent"
                     onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -145,6 +176,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                     {isMenuOpen ? <FiX className="w-5 h-5" /> : <FiMenu className="w-5 h-5" />}
                 </button>
 
+                {/* Logo */}
                 <div className="flex items-center">
                     <NavLink
                         to="/"
@@ -172,7 +204,9 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
 
                 <Navbar />
 
+                {/* Right-side icons */}
                 <div className="flex items-center space-x-2 md:space-x-3 z-50">
+                    {/* Search */}
                     <div className="relative" ref={searchRef}>
                         <button
                             className="text-primary transition hover:text-accent p-1.5 rounded-full hover:bg-primary/10"
@@ -199,12 +233,34 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                                     <FiSearch className="w-5 h-5" />
                                 </button>
                             </form>
-                            <div className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400">
-                                Tìm kiếm phổ biến: Áo, Váy, Quần
-                            </div>
+                            {suggestions.length > 0 && (
+                                <div className="max-h-60 overflow-y-auto">
+                                    {suggestions.map((product) => (
+                                        <NavLink
+                                            key={product.productId}
+                                            to={`/products/${product.slug}`}
+                                            className="flex items-center p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                            onClick={() => {
+                                                setSuggestions([]);
+                                                setIsSearchActive(false);
+                                            }}
+                                        >
+                                            {product.thumbnail && (
+                                                <img
+                                                    src={product.thumbnail}
+                                                    alt={product.name}
+                                                    className="w-10 h-10 object-cover mr-2"
+                                                />
+                                            )}
+                                            <span>{product.name}</span>
+                                        </NavLink>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
 
+                    {/* Cart */}
                     <NavLink
                         to="/cart"
                         className={({ isActive }) =>
@@ -231,6 +287,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                         )}
                     </NavLink>
 
+                    {/* Theme toggle */}
                     <button
                         onClick={toggleTheme}
                         className="text-primary transition hover:text-accent p-1.5 rounded-full hover:bg-primary/10"
@@ -239,6 +296,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                         {isDarkMode ? <FiSun className="w-5 h-5" /> : <FiMoon className="w-5 h-5" />}
                     </button>
 
+                    {/* User menu */}
                     <div className="relative user-menu-container">
                         <button
                             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
@@ -332,13 +390,13 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                 </div>
             </div>
 
+            {/* Mobile menu */}
             <div
                 className={`md:hidden fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity duration-300 ${
                     isMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
                 }`}
                 onClick={() => setIsMenuOpen(false)}
             ></div>
-
             <div
                 className={`md:hidden fixed top-0 left-0 h-full w-3/4 max-w-xs bg-white dark:bg-darkBackground shadow-xl z-50 transform transition-transform duration-300 ease-in-out ${
                     isMenuOpen ? 'translate-x-0' : '-translate-x-full'
@@ -354,6 +412,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                     </button>
                 </div>
 
+                {/* Mobile search */}
                 <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
                     <form onSubmit={handleSearch} className="flex items-center bg-gray-100 dark:bg-secondary/20 rounded-full overflow-hidden">
                         <input
@@ -367,6 +426,30 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                             <FiSearch className="w-5 h-5" />
                         </button>
                     </form>
+                    {suggestions.length > 0 && (
+                        <div className="mt-2 max-h-60 overflow-y-auto bg-white dark:bg-darkBackground shadow-lg rounded-md">
+                            {suggestions.map((product) => (
+                                <NavLink
+                                    key={product.productId}
+                                    to={`/products/${product.slug}`}
+                                    className="flex items-center p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                    onClick={() => {
+                                        setSuggestions([]);
+                                        setIsMenuOpen(false);
+                                    }}
+                                >
+                                    {product.thumbnail && (
+                                        <img
+                                            src={product.thumbnail}
+                                            alt={product.name}
+                                            className="w-10 h-10 object-cover mr-2"
+                                        />
+                                    )}
+                                    <span>{product.name}</span>
+                                </NavLink>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 <div className="p-4">
@@ -401,23 +484,14 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                             <NavLink
                                 to="/wishlist"
                                 className={({ isActive }) =>
-                                    `flex items-center space-x-2 py-2 px-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 rounded mb-1 sm:hidden ${
+                                    `flex items-center space-x-2 py-2 px-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 rounded mb-1 sm-hidden ${
                                         isActive ? 'text-primary/80 font-bold' : ''
                                     }`
                                 }
                                 onClick={() => setIsMenuOpen(false)}
                             >
-                                {({ isActive }) => (
-                                    <>
-                                        <FiHeart className="w-4 h-4" />
-                                        <span>Danh sách yêu thích</span>
-                                        <span
-                                            className={`absolute bottom-[-4px] left-0 right-0 h-[2px] bg-primary transition-all duration-300 group-hover:w-full ${
-                                                isActive ? 'w-full' : 'w-0'
-                                            }`}
-                                        ></span>
-                                    </>
-                                )}
+                                <FiHeart className="w-4 h-4" />
+                                <span>Danh sách yêu thích</span>
                             </NavLink>
                             <NavLink
                                 to="/order/list"
