@@ -3,10 +3,10 @@ import {
     ProductResponseDTO,
     ProductImageResponseDTO,
     ProductVariantResponseDTO,
-    CategoryDTO,
-    BrandDTO,
     PageResponse
 } from '../../types/product.types';
+import { CategoryDTO } from '../../types/category.types';
+import { BrandDTO } from "../../types/brand.types.tsx";
 
 interface ProductState {
     products: ProductResponseDTO[];
@@ -26,15 +26,16 @@ interface ProductState {
     pageSize: number;
     totalPages: number;
     searchTerm: string;
-    selectedCategory: number | null;
-    selectedBrand: number | null;
+    // Thay đổi từ single value thành array
+    selectedCategories: number[];
+    selectedBrands: number[];
     priceRange: {
         min: number | null;
         max: number | null;
     };
     lastRequestTimestamp: number;
-    sortBy: string;  // Thêm sortBy
-    sortDir: 'asc' | 'desc';  // Thêm sortDir
+    sortBy: string;
+    sortDir: 'asc' | 'desc';
 }
 
 const initialState: ProductState = {
@@ -55,12 +56,13 @@ const initialState: ProductState = {
     pageSize: 12,
     totalPages: 0,
     searchTerm: '',
-    selectedCategory: null,
-    selectedBrand: null,
+    // Khởi tạo mảng rỗng thay vì null
+    selectedCategories: [],
+    selectedBrands: [],
     priceRange: { min: null, max: null },
     lastRequestTimestamp: 0,
-    sortBy: 'createdAt',  // Mặc định là sắp xếp theo ngày tạo
-    sortDir: 'desc'       // Mặc định là giảm dần
+    sortBy: 'createdAt',
+    sortDir: 'desc'
 };
 
 const ensureProductData = (product: ProductResponseDTO): ProductResponseDTO => {
@@ -153,36 +155,111 @@ const productSlice = createSlice({
         },
         setSearchTerm(state, action: PayloadAction<string>) {
             state.searchTerm = action.payload;
+            // Reset về trang đầu khi thay đổi searchTerm
+            state.currentPage = 0;
         },
+
+        // Thay đổi từ việc lưu trữ single value thành array
+        setCategoryIds(state, action: PayloadAction<number[] | null>) {
+            state.selectedCategories = action.payload ? [...action.payload] : [];
+            // Reset về trang đầu khi thay đổi danh mục
+            state.currentPage = 0;
+        },
+
+        // Thêm action để thêm một category vào mảng nếu chưa có
+        addCategoryId(state, action: PayloadAction<number>) {
+            if (!state.selectedCategories.includes(action.payload)) {
+                state.selectedCategories.push(action.payload);
+                state.currentPage = 0;
+            }
+        },
+
+        // Thêm action để xóa một category khỏi mảng
+        removeCategoryId(state, action: PayloadAction<number>) {
+            state.selectedCategories = state.selectedCategories.filter(id => id !== action.payload);
+            state.currentPage = 0;
+        },
+
+        // Giữ lại action cũ cho tương thích ngược
         setSelectedCategory(state, action: PayloadAction<number | null>) {
-            state.selectedCategory = action.payload;
+            if (action.payload === null) {
+                state.selectedCategories = [];
+            } else {
+                state.selectedCategories = [action.payload];
+            }
+            state.currentPage = 0;
         },
+
+        // Thay đổi từ việc lưu trữ single value thành array
+        setBrandIds(state, action: PayloadAction<number[] | null>) {
+            state.selectedBrands = action.payload ? [...action.payload] : [];
+            // Reset về trang đầu khi thay đổi thương hiệu
+            state.currentPage = 0;
+        },
+
+        // Thêm action để thêm một brand vào mảng nếu chưa có
+        addBrandId(state, action: PayloadAction<number>) {
+            if (!state.selectedBrands.includes(action.payload)) {
+                state.selectedBrands.push(action.payload);
+                state.currentPage = 0;
+            }
+        },
+
+        // Thêm action để xóa một brand khỏi mảng
+        removeBrandId(state, action: PayloadAction<number>) {
+            state.selectedBrands = state.selectedBrands.filter(id => id !== action.payload);
+            state.currentPage = 0;
+        },
+
+        // Giữ lại action cũ cho tương thích ngược
         setSelectedBrand(state, action: PayloadAction<number | null>) {
-            state.selectedBrand = action.payload;
+            if (action.payload === null) {
+                state.selectedBrands = [];
+            } else {
+                state.selectedBrands = [action.payload];
+            }
+            state.currentPage = 0;
         },
+
         setPriceRange(state, action: PayloadAction<{ min: number | null; max: number | null }>) {
             state.priceRange = action.payload;
+            state.currentPage = 0;
         },
+
         setCurrentPage(state, action: PayloadAction<number>) {
             state.currentPage = action.payload;
         },
+
         setPageSize(state, action: PayloadAction<number>) {
             state.pageSize = action.payload;
+            state.currentPage = 0;
         },
-        setSortBy(state, action: PayloadAction<string>) {  // Thêm reducer cho sortBy
+
+        setSortBy(state, action: PayloadAction<string>) {
             state.sortBy = action.payload;
+            state.currentPage = 0;
         },
-        setSortDir(state, action: PayloadAction<'asc' | 'desc'>) {  // Thêm reducer cho sortDir
+
+        setSortDir(state, action: PayloadAction<'asc' | 'desc'>) {
             state.sortDir = action.payload;
+            state.currentPage = 0;
         },
+
+        // Action hỗ trợ thiết lập cả sortBy và sortDir cùng lúc
+        setSorting(state, action: PayloadAction<{ sortBy: string; sortDir: 'asc' | 'desc' }>) {
+            state.sortBy = action.payload.sortBy;
+            state.sortDir = action.payload.sortDir;
+            state.currentPage = 0;
+        },
+
         clearFilters(state) {
             state.searchTerm = '';
-            state.selectedCategory = null;
-            state.selectedBrand = null;
+            state.selectedCategories = [];
+            state.selectedBrands = [];
             state.priceRange = { min: null, max: null };
             state.currentPage = 0;
-            state.sortBy = 'createdAt';  // Reset sortBy về mặc định
-            state.sortDir = 'desc';      // Reset sortDir về mặc định
+            state.sortBy = 'createdAt';
+            state.sortDir = 'desc';
         }
     }
 });
@@ -203,14 +280,23 @@ export const {
     fetchCategoriesSuccess,
     fetchBrandsSuccess,
     setSearchTerm,
+    // Export các action mới
+    setCategoryIds,
+    addCategoryId,
+    removeCategoryId,
+    setBrandIds,
+    addBrandId,
+    removeBrandId,
+    // Giữ lại các action cũ cho tương thích ngược
     setSelectedCategory,
     setSelectedBrand,
     setPriceRange,
     setCurrentPage,
     setPageSize,
-    clearFilters,
-    setSortBy,  // Export action mới
-    setSortDir  // Export action mới
+    setSortBy,
+    setSortDir,
+    setSorting,
+    clearFilters
 } = productSlice.actions;
 
 export default productSlice.reducer;

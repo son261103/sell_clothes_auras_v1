@@ -8,6 +8,7 @@ import shippingReducer from "./slices/shippingSlice.tsx";
 import paymentReducer from "./slices/paymentSlice.tsx";
 import paymentMethodReducer from "./slices/paymentMethodSlice.tsx";
 import couponReducer from "./slices/couponSlice.tsx";
+import brandCategoryReducer from "./slices/brandCategorySlice.tsx";
 
 export const store = configureStore({
     reducer: {
@@ -20,6 +21,8 @@ export const store = configureStore({
         payment: paymentReducer,
         paymentMethod: paymentMethodReducer,
         coupon: couponReducer,
+        brandCategory: brandCategoryReducer,
+
         // Thêm các reducer khác nếu cần
     },
 });

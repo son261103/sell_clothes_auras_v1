@@ -5,67 +5,68 @@ interface LoadingProductCardProps {
 }
 
 const LoadingProductCard: React.FC<LoadingProductCardProps> = ({ viewMode = 'grid' }) => {
-    if (viewMode === 'list') {
-        // List view skeleton
+    // Grid skeleton loader
+    if (viewMode === 'grid') {
         return (
-            <div className="bg-white dark:bg-secondary/10 rounded-xl overflow-hidden shadow-sm border border-highlight/10 dark:border-secondary/30 h-full flex flex-col sm:flex-row animate-pulse">
-                {/* Image placeholder */}
-                <div className="h-52 sm:h-auto sm:w-48 md:w-56 lg:w-64 flex-shrink-0 bg-gray-200 dark:bg-gray-700 relative"></div>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden flex flex-col h-full animate-pulse">
+                {/* Image skeleton */}
+                <div className="bg-gray-200 dark:bg-gray-700 w-full pt-[100%] relative" />
 
-                {/* Content placeholder */}
-                <div className="p-4 flex-grow flex flex-col">
-                    {/* Badge and rating */}
-                    <div className="mb-2 flex items-center justify-between">
-                        <div className="h-4 w-20 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
-                        <div className="h-4 w-12 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+                {/* Content skeleton */}
+                <div className="p-4 flex-grow">
+                    {/* Category/brand skeleton */}
+                    <div className="flex justify-between">
+                        <div className="bg-gray-200 dark:bg-gray-700 h-4 w-20 rounded" />
+                        <div className="bg-gray-200 dark:bg-gray-700 h-4 w-16 rounded" />
                     </div>
 
-                    {/* Title placeholder */}
-                    <div className="h-5 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-2"></div>
-                    <div className="h-5 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-2"></div>
+                    {/* Title skeleton */}
+                    <div className="mt-2 bg-gray-200 dark:bg-gray-700 h-5 w-full rounded" />
+                    <div className="mt-1 bg-gray-200 dark:bg-gray-700 h-5 w-4/5 rounded" />
 
-                    {/* Description placeholder */}
-                    <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-full mb-2"></div>
-                    <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-5/6 mb-2"></div>
-
-                    {/* Price and button placeholder */}
-                    <div className="mt-auto flex items-end justify-between">
-                        <div className="h-6 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
-                        <div className="h-8 w-32 bg-gray-200 dark:bg-gray-700 rounded-lg"></div>
+                    {/* Price skeleton */}
+                    <div className="mt-3 flex items-center gap-2">
+                        <div className="bg-gray-200 dark:bg-gray-700 h-6 w-24 rounded" />
+                        <div className="bg-gray-200 dark:bg-gray-700 h-4 w-16 rounded" />
                     </div>
                 </div>
             </div>
         );
     }
 
-    // Grid view skeleton (default)
+    // List skeleton loader
     return (
-        <div className="bg-white dark:bg-secondary/10 rounded-xl overflow-hidden shadow-sm border border-highlight/10 dark:border-secondary/30 h-full flex flex-col animate-pulse">
-            {/* Image placeholder */}
-            <div className="h-52 bg-gray-200 dark:bg-gray-700 relative"></div>
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden animate-pulse">
+            <div className="flex flex-col sm:flex-row">
+                {/* Image skeleton */}
+                <div className="w-full sm:w-1/3 h-48 sm:h-auto bg-gray-200 dark:bg-gray-700" />
 
-            {/* Content placeholder */}
-            <div className="p-3 flex-grow flex flex-col">
-                {/* Title placeholder */}
-                <div className="h-12 mb-2">
-                    <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-2"></div>
-                    <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
-                </div>
-
-                {/* Rating placeholder */}
-                <div className="mt-2 flex items-center">
-                    <div className="flex gap-1">
-                        {[...Array(5)].map((_, i) => (
-                            <div key={i} className="w-3 h-3 rounded-full bg-gray-200 dark:bg-gray-700"></div>
-                        ))}
+                {/* Content skeleton */}
+                <div className="p-4 flex-1">
+                    {/* Category/brand skeleton */}
+                    <div className="flex">
+                        <div className="bg-gray-200 dark:bg-gray-700 h-4 w-20 rounded mr-2" />
+                        <div className="bg-gray-200 dark:bg-gray-700 h-4 w-16 rounded" />
                     </div>
-                    <div className="w-6 h-3 bg-gray-200 dark:bg-gray-700 rounded ml-2"></div>
-                </div>
 
-                {/* Price and category placeholder */}
-                <div className="mt-2 flex justify-between items-center">
-                    <div className="w-20 h-5 bg-gray-200 dark:bg-gray-700 rounded"></div>
-                    <div className="w-16 h-4 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+                    {/* Title skeleton */}
+                    <div className="mt-2 bg-gray-200 dark:bg-gray-700 h-6 w-full rounded" />
+
+                    {/* Description skeleton */}
+                    <div className="mt-2">
+                        <div className="bg-gray-200 dark:bg-gray-700 h-4 w-full rounded mb-1" />
+                        <div className="bg-gray-200 dark:bg-gray-700 h-4 w-5/6 rounded" />
+                    </div>
+
+                    {/* Price and actions skeleton */}
+                    <div className="mt-4 sm:flex sm:justify-between">
+                        <div className="bg-gray-200 dark:bg-gray-700 h-6 w-32 rounded mb-3 sm:mb-0" />
+                        <div className="flex gap-2">
+                            <div className="bg-gray-200 dark:bg-gray-700 h-10 w-32 rounded" />
+                            <div className="bg-gray-200 dark:bg-gray-700 h-10 w-10 rounded" />
+                            <div className="bg-gray-200 dark:bg-gray-700 h-10 w-10 rounded" />
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

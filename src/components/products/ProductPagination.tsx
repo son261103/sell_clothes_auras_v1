@@ -6,12 +6,14 @@ interface ProductPaginationProps {
     currentPage: number;
     totalPages: number;
     onPageChange: (page: number) => void;
+    isLoading?: boolean; // Add isLoading prop
 }
 
 const ProductPagination: React.FC<ProductPaginationProps> = ({
                                                                  currentPage,
                                                                  totalPages,
                                                                  onPageChange,
+                                                                 isLoading = false, // Default to false
                                                              }) => {
     // Don't show pagination if there's only one page
     if (totalPages <= 1) return null;
@@ -76,14 +78,14 @@ const ProductPagination: React.FC<ProductPaginationProps> = ({
             initial="hidden"
             animate="visible"
         >
-            <motion.ul className="flex items-center">
+            <motion.ul className={`flex items-center ${isLoading ? 'opacity-60 pointer-events-none' : ''}`}>
                 {/* Previous page button */}
                 <motion.li variants={itemVariants}>
                     <button
                         onClick={() => onPageChange(currentPage - 1)}
-                        disabled={currentPage === 0}
+                        disabled={currentPage === 0 || isLoading}
                         className={`flex items-center justify-center w-10 h-10 rounded-md mr-2 transition-colors duration-200 ${
-                            currentPage === 0
+                            currentPage === 0 || isLoading
                                 ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
                                 : 'text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-primary/20'
                         }`}
@@ -110,6 +112,7 @@ const ProductPagination: React.FC<ProductPaginationProps> = ({
                         <motion.li key={pageNumber} variants={itemVariants}>
                             <button
                                 onClick={() => onPageChange(pageNumber)}
+                                disabled={isLoading}
                                 className={`flex items-center justify-center w-10 h-10 rounded-md mx-1 font-medium transition-all duration-300 ${
                                     currentPage === pageNumber
                                         ? 'bg-primary text-white shadow-md transform scale-105'
@@ -128,9 +131,9 @@ const ProductPagination: React.FC<ProductPaginationProps> = ({
                 <motion.li variants={itemVariants}>
                     <button
                         onClick={() => onPageChange(currentPage + 1)}
-                        disabled={currentPage >= totalPages - 1}
+                        disabled={currentPage >= totalPages - 1 || isLoading}
                         className={`flex items-center justify-center w-10 h-10 rounded-md ml-2 transition-colors duration-200 ${
-                            currentPage >= totalPages - 1
+                            currentPage >= totalPages - 1 || isLoading
                                 ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
                                 : 'text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-primary/20'
                         }`}

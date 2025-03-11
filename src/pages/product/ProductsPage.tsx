@@ -1,24 +1,32 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiFilter, FiRefreshCw, FiGrid, FiList, FiShoppingBag } from 'react-icons/fi';
+import { FiFilter, FiRefreshCw, FiChevronRight, FiGrid, FiList } from 'react-icons/fi';
 import useProduct from '../../hooks/useProduct';
+import useBrandCategory from '../../hooks/useBrandCategory';
 import ProductGrid from '../../components/products/ProductGrid';
 import ProductFilters from '../../components/products/ProductFilters';
 import ProductSorting from '../../components/products/ProductSorting';
 import ProductPagination from '../../components/products/ProductPagination';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import EmptyState from '../../components/common/EmptyState';
+import { ProductFilterParams } from '../../types/product.types';
+import {BrandDTO} from "../../types/brand.types.tsx";
+import {CategoryDTO} from "../../types/category.types.tsx";
 
 const ProductsPage: React.FC = () => {
     const navigate = useNavigate();
+    const { categorySlug, brandSlug } = useParams<{ categorySlug?: string; brandSlug?: string }>();
     const [searchParams] = useSearchParams();
     const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const initialLoadComplete = useRef(false);
     const lastSearchParams = useRef('');
     const scrollRef = useRef<HTMLDivElement>(null);
+    const prevCategorySlug = useRef<string | undefined>(categorySlug);
+    const prevBrandSlug = useRef<string | undefined>(brandSlug);
+    const [allCategories, setAllCategories] = useState<CategoryDTO[]>([]);
 
     const {
         products,
@@ -29,18 +37,157 @@ const ProductsPage: React.FC = () => {
         pageSize,
         totalPages,
         searchTerm,
+        // Original single selection properties
         selectedCategory,
         selectedBrand,
+        // New array properties (may be undefined if not supported yet)
+        selectedCategories = [],
+        selectedBrands = [],
         priceRange,
         sortBy,
         sortDir,
         updatePage,
         resetFilters,
         applyFilters,
-        categories,
-        brands
     } = useProduct();
 
+    // Get category and brand information
+    const {
+        getCategoryBySlug,
+        getBrandBySlug,
+        selectedCategory: categoryDetail,
+        selectedBrand: brandDetail,
+        getCategoryBreadcrumb,
+        activeParentCategories,
+        activeBrands,
+        loadInitialData,
+        // Use this to get all categories including subcategories
+        getCategoryWithSubcategories
+    } = useBrandCategory();
+
+    // Handle URL params change
+    useEffect(() => {
+        // Only trigger this effect if URL params actually changed
+        if (categorySlug === prevCategorySlug.current && brandSlug === prevBrandSlug.current) {
+            return;
+        }
+
+        // Track the current slugs for the next render
+        prevCategorySlug.current = categorySlug;
+        prevBrandSlug.current = brandSlug;
+
+        const initFromUrl = async () => {
+            try {
+                // If we're accessing a category page
+                if (categorySlug) {
+                    const category = await getCategoryBySlug(categorySlug) as CategoryDTO | null;
+                    if (category) {
+                        await getCategoryBreadcrumb(category.categoryId);
+
+                        // Create a filter params object (properly typed)
+                        const filterParams: ProductFilterParams = {
+                            categoryId: category.categoryId,
+                            page: 0
+                        };
+
+                        applyFilters(filterParams);
+                    }
+                }
+                // If we're accessing a brand page
+                else if (brandSlug) {
+                    const brand = await getBrandBySlug(brandSlug) as BrandDTO | null;
+                    if (brand) {
+                        // Create a filter params object (properly typed)
+                        const filterParams: ProductFilterParams = {
+                            brandId: brand.brandId,
+                            page: 0
+                        };
+
+                        applyFilters(filterParams);
+                    }
+                }
+                // Reset when no slug is present (going to /products)
+                else if (!searchParams.toString()) {
+                    resetFilters();
+                }
+            } catch (error) {
+                console.error('Error initializing from URL:', error);
+                toast.error('Đã xảy ra lỗi khi tải dữ liệu');
+            }
+        };
+
+        initFromUrl();
+    }, [categorySlug, brandSlug, getCategoryBySlug, getBrandBySlug, getCategoryBreadcrumb, applyFilters, resetFilters, searchParams]);
+
+    // Initial data load - updated to fetch all categories and subcategories
+    useEffect(() => {
+        const loadInitialDataOnce = async () => {
+            if (!activeParentCategories?.length || !activeBrands?.length) {
+                try {
+                    console.log('Loading initial category and brand data...');
+                    const { categories } = await loadInitialData();
+                    console.log('Initial data loaded successfully');
+
+                    // Create a flattened array of all categories, including subcategories
+                    const fetchSubcategories = async () => {
+                        const allCategoriesArray: CategoryDTO[] = [...(categories || [])];
+
+                        // Fetch subcategories for each parent category
+                        if (categories && categories.length > 0) {
+                            for (const category of categories) {
+                                try {
+                                    // Fetch subcategories hierarchy for this parent category
+                                    const hierarchy = await getCategoryWithSubcategories(category.categoryId);
+                                    if (hierarchy && hierarchy.subcategories) {
+                                        // Add all subcategories to our flattened array
+                                        allCategoriesArray.push(...hierarchy.subcategories);
+                                    }
+                                } catch (err) {
+                                    console.error(`Error loading subcategories for ${category.name}:`, err);
+                                }
+                            }
+                        }
+
+                        console.log(`Loaded ${allCategoriesArray.length} total categories`);
+                        setAllCategories(allCategoriesArray);
+                    };
+
+                    fetchSubcategories();
+                } catch (error) {
+                    console.error('Error loading initial data:', error);
+                    toast.error('Đã xảy ra lỗi khi tải dữ liệu danh mục và thương hiệu');
+                }
+            } else {
+                console.log('Using cached category and brand data');
+
+                // Even with cached parent categories, ensure we have all subcategories
+                const fetchSubcategoriesForCached = async () => {
+                    const allCategoriesArray: CategoryDTO[] = [...(activeParentCategories || [])];
+
+                    if (activeParentCategories && activeParentCategories.length > 0) {
+                        for (const category of activeParentCategories) {
+                            try {
+                                const hierarchy = await getCategoryWithSubcategories(category.categoryId);
+                                if (hierarchy && hierarchy.subcategories) {
+                                    allCategoriesArray.push(...hierarchy.subcategories);
+                                }
+                            } catch (err) {
+                                console.error(`Error loading subcategories for ${category.name}:`, err);
+                            }
+                        }
+                    }
+
+                    setAllCategories(allCategoriesArray);
+                };
+
+                fetchSubcategoriesForCached();
+            }
+        };
+
+        loadInitialDataOnce();
+    }, [loadInitialData, activeParentCategories, activeBrands, getCategoryWithSubcategories]);
+
+    // Handle search params update
     useEffect(() => {
         const currentSearchString = searchParams.toString();
         if (currentSearchString === lastSearchParams.current && initialLoadComplete.current) {
@@ -49,34 +196,50 @@ const ProductsPage: React.FC = () => {
 
         lastSearchParams.current = currentSearchString;
 
+        // Skip if we're on a category or brand page
+        if (categorySlug || brandSlug) {
+            initialLoadComplete.current = true;
+            return;
+        }
+
         const search = searchParams.get('search') || '';
-        const categoryId = searchParams.get('category') ? parseInt(searchParams.get('category') || '0') : null;
-        const brandId = searchParams.get('brand') ? parseInt(searchParams.get('brand') || '0') : null;
-        const minPrice = searchParams.get('minPrice') ? parseInt(searchParams.get('minPrice') || '0') : null;
-        const maxPrice = searchParams.get('maxPrice') ? parseInt(searchParams.get('maxPrice') || '0') : null;
+        const categoryId = searchParams.get('category') ? parseInt(searchParams.get('category') || '0') : undefined;
+        const brandId = searchParams.get('brand') ? parseInt(searchParams.get('brand') || '0') : undefined;
+        const minPrice = searchParams.get('minPrice') ? parseInt(searchParams.get('minPrice') || '0') : undefined;
+        const maxPrice = searchParams.get('maxPrice') ? parseInt(searchParams.get('maxPrice') || '0') : undefined;
         const page = searchParams.get('page') ? parseInt(searchParams.get('page') || '0') : 0;
         const urlSortBy = searchParams.get('sortBy') || 'createdAt';
         const urlSortDir = (searchParams.get('sortDir') as 'asc' | 'desc') || 'desc';
 
-        applyFilters({
-            searchTerm: search || undefined,
-            categoryId,
-            brandId,
-            minPrice,
-            maxPrice,
+        // Create a properly typed filter params object
+        const filterParams: ProductFilterParams = {
             page,
             sortBy: urlSortBy,
             sortDir: urlSortDir,
-        }).then(() => {
-            initialLoadComplete.current = true;
-        }).catch((err) => {
-            console.error('Error applying filters:', err);
-            toast.error('Đã xảy ra lỗi khi tải sản phẩm');
-        });
-    }, [searchParams, applyFilters]);
+        };
 
+        if (search) filterParams.search = search;
+        if (categoryId) filterParams.categoryId = categoryId;
+        if (brandId) filterParams.brandId = brandId;
+        if (minPrice) filterParams.minPrice = minPrice;
+        if (maxPrice) filterParams.maxPrice = maxPrice;
+
+        applyFilters(filterParams)
+            .then(() => {
+                initialLoadComplete.current = true;
+            })
+            .catch((err) => {
+                console.error('Error applying filters from search params:', err);
+                toast.error('Đã xảy ra lỗi khi tải sản phẩm');
+            });
+    }, [searchParams, applyFilters, categorySlug, brandSlug]);
+
+    // Update URL based on filters
     useEffect(() => {
         if (!initialLoadComplete.current) return;
+
+        // Skip URL updates if we're on a category or brand page
+        if (categorySlug || brandSlug) return;
 
         const params = new URLSearchParams();
         if (currentPage > 0) params.set('page', currentPage.toString());
@@ -95,9 +258,10 @@ const ProductsPage: React.FC = () => {
             lastSearchParams.current = newSearch;
             navigate({ search: newSearch }, { replace: true });
         }
-    }, [currentPage, pageSize, searchTerm, selectedCategory, selectedBrand, priceRange, sortBy, sortDir, navigate, searchParams]);
+    }, [currentPage, pageSize, searchTerm, selectedCategory, selectedBrand, priceRange, sortBy, sortDir, navigate, searchParams, categorySlug, brandSlug]);
 
-    const handlePageChange = (page: number) => {
+    // Scroll to top when changing page
+    const handlePageChange = useCallback((page: number) => {
         updatePage(page);
 
         // Scroll to top of product section with smooth animation
@@ -107,27 +271,77 @@ const ProductsPage: React.FC = () => {
                 block: 'start'
             });
         }
-    };
+    }, [updatePage]);
 
-    const handleFilterReset = () => {
+    // Reset all filters
+    const handleFilterReset = useCallback(() => {
         resetFilters();
         lastSearchParams.current = '';
-        navigate('/products', { replace: true });
-        toast.success('Đã xóa tất cả bộ lọc');
-    };
 
-    const handleFilterChange = (filters: {
+        // If we're on a category or brand page, navigate to products page
+        if (categorySlug || brandSlug) {
+            navigate('/products', { replace: true });
+        } else {
+            navigate('/products', { replace: true });
+        }
+
+        toast.success('Đã xóa tất cả bộ lọc');
+    }, [resetFilters, navigate, categorySlug, brandSlug]);
+
+    // Handle filter changes
+    const handleFilterChange = useCallback((filters: {
         categoryId?: number | null;
         brandId?: number | null;
+        categoryIds?: number[] | null;  // Support for multiple categories
+        brandIds?: number[] | null;     // Support for multiple brands
         minPrice?: number | null;
         maxPrice?: number | null;
         searchTerm?: string;
     }) => {
-        applyFilters({ ...filters, sortBy, sortDir, page: 0 }).catch((err) => {
+        // Type-safe filter application
+        const filterParams: ProductFilterParams = { page: 0 };
+
+        // Handle search term
+        if (filters.searchTerm !== undefined) {
+            filterParams.search = filters.searchTerm;
+        }
+
+        // Handle categories - support both single and multiple
+        if (filters.categoryIds !== undefined) {
+            filterParams.categoryIds = filters.categoryIds;
+        } else if (filters.categoryId !== undefined) {
+            filterParams.categoryId = filters.categoryId !== null ? filters.categoryId : undefined;
+        }
+
+        // Handle brands - support both single and multiple
+        if (filters.brandIds !== undefined) {
+            filterParams.brandIds = filters.brandIds;
+        } else if (filters.brandId !== undefined) {
+            filterParams.brandId = filters.brandId !== null ? filters.brandId : undefined;
+        }
+
+        // Handle price range
+        if (filters.minPrice !== undefined) {
+            filterParams.minPrice = filters.minPrice !== null ? filters.minPrice : undefined;
+        }
+        if (filters.maxPrice !== undefined) {
+            filterParams.maxPrice = filters.maxPrice !== null ? filters.maxPrice : undefined;
+        }
+
+        // Include sort settings
+        if (sortBy) filterParams.sortBy = sortBy;
+        if (sortDir) filterParams.sortDir = sortDir;
+
+        applyFilters(filterParams).catch((err) => {
             console.error('Error applying filters:', err);
             toast.error('Đã xảy ra lỗi khi lọc sản phẩm');
         });
-    };
+    }, [applyFilters, sortBy, sortDir]);
+
+    // Handle view mode change
+    const handleViewModeChange = useCallback((mode: 'grid' | 'list') => {
+        setViewMode(mode);
+    }, []);
 
     // Animation variants
     const pageVariants = {
@@ -155,15 +369,6 @@ const ProductsPage: React.FC = () => {
         }
     };
 
-    // Find category and brand names
-    const categoryName = categories?.find(c => c.categoryId === selectedCategory)?.name;
-    const brandName = brands?.find(b => b.brandId === selectedBrand)?.name;
-
-    // Format price range for display
-    const formatPrice = (price: number | null) => {
-        if (price === null) return '';
-        return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
-    };
 
     return (
         <motion.div
@@ -174,96 +379,51 @@ const ProductsPage: React.FC = () => {
             exit="exit"
         >
             {/* Main Content with Enhanced Background */}
-            <div className="container mx-auto px-4 py-6">
+            <div className="mx-auto px-4 sm:px-6 lg:px-8 py-6">
                 <motion.div
                     className="bg-white dark:bg-gray-800 shadow-xl rounded-xl overflow-hidden transition-all duration-300 border border-gray-100 dark:border-gray-700"
                     variants={contentVariants}
                     ref={scrollRef}
                 >
                     <div className="p-4 border-b border-gray-100 dark:border-gray-700">
-                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
-                            <FiShoppingBag className="mr-2" />
-                            {categoryName ? categoryName : 'Tất cả sản phẩm'}
-                            {brandName && ` - ${brandName}`}
-                        </h1>
-
-                        {/* Applied filters summary */}
-                        <div className="mt-2 flex flex-wrap gap-2">
-                            {searchTerm && (
-                                <div className="inline-flex items-center px-2 py-1 bg-primary/10 dark:bg-primary/20 text-primary dark:text-accent text-xs rounded-md">
-                                    <span>Tìm kiếm: {searchTerm}</span>
-                                    <button
-                                        className="ml-1.5 text-gray-500 hover:text-primary"
-                                        onClick={() => handleFilterChange({ searchTerm: '' })}
-                                    >
-                                        &times;
-                                    </button>
-                                </div>
-                            )}
-
-                            {categoryName && (
-                                <div className="inline-flex items-center px-2 py-1 bg-primary/10 dark:bg-primary/20 text-primary dark:text-accent text-xs rounded-md">
-                                    <span>Danh mục: {categoryName}</span>
-                                    <button
-                                        className="ml-1.5 text-gray-500 hover:text-primary"
-                                        onClick={() => handleFilterChange({ categoryId: null })}
-                                    >
-                                        &times;
-                                    </button>
-                                </div>
-                            )}
-
-                            {brandName && (
-                                <div className="inline-flex items-center px-2 py-1 bg-primary/10 dark:bg-primary/20 text-primary dark:text-accent text-xs rounded-md">
-                                    <span>Thương hiệu: {brandName}</span>
-                                    <button
-                                        className="ml-1.5 text-gray-500 hover:text-primary"
-                                        onClick={() => handleFilterChange({ brandId: null })}
-                                    >
-                                        &times;
-                                    </button>
-                                </div>
-                            )}
-
-                            {(priceRange.min !== null || priceRange.max !== null) && (
-                                <div className="inline-flex items-center px-2 py-1 bg-primary/10 dark:bg-primary/20 text-primary dark:text-accent text-xs rounded-md">
-                                    <span>
-                                        Giá: {priceRange.min !== null ? formatPrice(priceRange.min) : 'Min'} - {priceRange.max !== null ? formatPrice(priceRange.max) : 'Max'}
-                                    </span>
-                                    <button
-                                        className="ml-1.5 text-gray-500 hover:text-primary"
-                                        onClick={() => handleFilterChange({ minPrice: null, maxPrice: null })}
-                                    >
-                                        &times;
-                                    </button>
-                                </div>
-                            )}
-
-                            {(searchTerm || categoryName || brandName || priceRange.min !== null || priceRange.max !== null) && (
+                        {/* Breadcrumb */}
+                        {(categoryDetail || brandDetail) && (
+                            <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-2 overflow-x-auto whitespace-nowrap py-1">
                                 <button
-                                    className="inline-flex items-center px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200"
-                                    onClick={handleFilterReset}
+                                    className="hover:text-primary dark:hover:text-accent transition-colors duration-200"
+                                    onClick={() => navigate('/')}
                                 >
-                                    Xóa tất cả
+                                    Trang chủ
                                 </button>
-                            )}
-                        </div>
+                                <FiChevronRight className="mx-2" />
+
+                                <button
+                                    className="hover:text-primary dark:hover:text-accent transition-colors duration-200"
+                                    onClick={() => navigate('/products')}
+                                >
+                                    Sản phẩm
+                                </button>
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex flex-col lg:flex-row gap-8 p-6">
                         {/* Filters - Desktop */}
                         <motion.div
-                            className="hidden lg:block w-64 flex-shrink-0 bg-gray-50 dark:bg-gray-700 rounded-lg p-5 shadow-inner"
+                            className="hidden lg:block w-72 flex-shrink-0 bg-gray-50 dark:bg-gray-700 rounded-lg p-5 shadow-inner"
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ duration: 0.5, delay: 0.2 }}
                         >
                             <ProductFilters
-                                selectedCategory={selectedCategory}
-                                selectedBrand={selectedBrand}
+                                selectedCategories={selectedCategory ? [selectedCategory] : selectedCategories}
+                                selectedBrands={selectedBrand ? [selectedBrand] : selectedBrands}
                                 priceRange={priceRange}
                                 onFilterChange={handleFilterChange}
                                 onResetFilters={handleFilterReset}
+                                categories={activeParentCategories || []}
+                                brands={activeBrands || []}
+                                allCategories={allCategories}
                             />
                         </motion.div>
 
@@ -312,13 +472,16 @@ const ProductsPage: React.FC = () => {
                                         </div>
                                         <div className="p-6 overflow-y-auto" style={{ maxHeight: "calc(100vh - 80px)" }}>
                                             <ProductFilters
-                                                selectedCategory={selectedCategory}
-                                                selectedBrand={selectedBrand}
+                                                selectedCategories={selectedCategory ? [selectedCategory] : selectedCategories}
+                                                selectedBrands={selectedBrand ? [selectedBrand] : selectedBrands}
                                                 priceRange={priceRange}
                                                 onFilterChange={handleFilterChange}
                                                 onResetFilters={handleFilterReset}
                                                 isMobile
                                                 onClose={() => setMobileFiltersOpen(false)}
+                                                categories={activeParentCategories || []}
+                                                brands={activeBrands || []}
+                                                allCategories={allCategories}
                                             />
                                         </div>
                                     </motion.div>
@@ -329,11 +492,11 @@ const ProductsPage: React.FC = () => {
                         {/* Main Content */}
                         <div className="flex-1">
                             <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                                {/* Filter and Sort Controls */}
-                                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                                {/* Mobile filter button */}
+                                <div className="lg:hidden">
                                     <motion.button
                                         type="button"
-                                        className="lg:hidden inline-flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow-md hover:bg-primary/90 dark:bg-accent dark:hover:bg-accent/90 transition-all duration-200"
+                                        className="inline-flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow-md hover:bg-primary/90 dark:bg-accent dark:hover:bg-accent/90 transition-all duration-200"
                                         onClick={() => setMobileFiltersOpen(true)}
                                         whileHover={{ scale: 1.05 }}
                                         whileTap={{ scale: 0.95 }}
@@ -341,45 +504,49 @@ const ProductsPage: React.FC = () => {
                                         <FiFilter className="mr-2 h-5 w-5" />
                                         Bộ lọc
                                     </motion.button>
+                                </div>
 
+                                {/* Controls: View Mode Toggle + Reset Filters */}
+                                <div className="flex items-center space-x-2">
+                                    {/* View mode toggle - UPDATED TO BE SMALLER */}
+                                    <div className="flex shadow-sm border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                                        <button
+                                            type="button"
+                                            className={`p-1.5 ${
+                                                viewMode === 'grid'
+                                                    ? 'bg-primary text-white shadow-inner'
+                                                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                            } transition-all duration-200 ease-in-out`}
+                                            onClick={() => handleViewModeChange('grid')}
+                                            title="Chế độ lưới"
+                                        >
+                                            <FiGrid className="h-4 w-4" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={`p-1.5 ${
+                                                viewMode === 'list'
+                                                    ? 'bg-primary text-white shadow-inner'
+                                                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                            } transition-all duration-200 ease-in-out`}
+                                            onClick={() => handleViewModeChange('list')}
+                                            title="Chế độ danh sách"
+                                        >
+                                            <FiList className="h-4 w-4" />
+                                        </button>
+                                    </div>
+
+                                    {/* Reset filters button - UPDATED TO BE SMALLER */}
                                     <motion.button
                                         type="button"
-                                        className="inline-flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200"
+                                        className="inline-flex items-center p-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200"
                                         onClick={handleFilterReset}
                                         whileHover={{ scale: 1.05 }}
                                         whileTap={{ scale: 0.95 }}
                                         title="Đặt lại bộ lọc"
                                     >
-                                        <FiRefreshCw className="h-5 w-5" />
+                                        <FiRefreshCw className="h-4 w-4" />
                                     </motion.button>
-
-                                    {/* View mode toggle */}
-                                    <div className="hidden sm:flex border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                                        <button
-                                            type="button"
-                                            className={`p-2 ${
-                                                viewMode === 'grid'
-                                                    ? 'bg-primary text-white'
-                                                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300'
-                                            } transition-colors duration-200`}
-                                            onClick={() => setViewMode('grid')}
-                                            title="Chế độ lưới"
-                                        >
-                                            <FiGrid className="h-5 w-5" />
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className={`p-2 ${
-                                                viewMode === 'list'
-                                                    ? 'bg-primary text-white'
-                                                    : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300'
-                                            } transition-colors duration-200`}
-                                            onClick={() => setViewMode('list')}
-                                            title="Chế độ danh sách"
-                                        >
-                                            <FiList className="h-5 w-5" />
-                                        </button>
-                                    </div>
                                 </div>
 
                                 {/* Sorting */}
@@ -427,7 +594,14 @@ const ProductsPage: React.FC = () => {
                             ) : products.length > 0 ? (
                                 <>
                                     <div className={`bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-inner duration-300 ${loading ? 'opacity-70' : 'opacity-100'}`}>
-                                        <ProductGrid products={products} loading={loading} viewMode={viewMode} />
+                                        <ProductGrid
+                                            products={products}
+                                            loading={loading}
+                                            viewMode={viewMode}
+                                            onViewModeChange={handleViewModeChange}
+                                            categories={activeParentCategories || []}
+                                            brands={activeBrands || []}
+                                        />
                                     </div>
 
                                     {/* Bottom Pagination */}

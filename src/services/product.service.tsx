@@ -28,23 +28,46 @@ const ProductService = {
             brandId,
             minPrice,
             maxPrice,
+            // Thêm hỗ trợ cho mảng danh mục và thương hiệu
+            categoryIds,
+            brandIds
         } = params;
 
         try {
             console.log('API Request - getProducts:', { params });
 
+            // Xây dựng parameters cho request
+            const requestParams: any = {
+                page,
+                size,
+                sortBy,
+                sortDir,
+                search,
+                minPrice,
+                maxPrice,
+            };
+
+            // Ưu tiên sử dụng mảng nếu có
+            if (categoryIds && categoryIds.length > 0) {
+                // Xác định cách gửi mảng categoryIds
+                // Cách 1: Chuyển thành chuỗi phân cách bởi dấu phẩy
+                requestParams.categoryIds = categoryIds.join(',');
+                // Cách 2: Giữ nguyên tham số (backend cần xử lý mảng)
+                // requestParams.categoryIds = categoryIds;
+            } else if (categoryId !== undefined) {
+                // Tương thích ngược với API cũ
+                requestParams.categoryId = categoryId;
+            }
+
+            // Tương tự với brandIds
+            if (brandIds && brandIds.length > 0) {
+                requestParams.brandIds = brandIds.join(',');
+            } else if (brandId !== undefined) {
+                requestParams.brandId = brandId;
+            }
+
             const response = await api.get<PageResponse<ProductResponseDTO>>('/public/products', {
-                params: {
-                    page,
-                    size,
-                    sortBy,
-                    sortDir,
-                    search,
-                    categoryId,
-                    brandId,
-                    minPrice,
-                    maxPrice,
-                }
+                params: requestParams
             });
 
             // Check the response data
@@ -177,7 +200,46 @@ const ProductService = {
     },
 
     /**
-     * Get products by category
+     * Get products by category - support for multiple categories
+     */
+    async getProductsByCategories(categoryIds: number[]): Promise<ProductResponseDTO[]> {
+        try {
+            // Sử dụng categoryIds làm tham số query
+            const response = await api.get<ProductResponseDTO[]>(`/public/products/categories`, {
+                params: {
+                    categoryIds: categoryIds.join(',')
+                }
+            });
+
+            // Validate and fix any products with missing data
+            const products = response.data.map(product => {
+                return {
+                    ...product,
+                    category: product.category || {
+                        categoryId: 0,
+                        name: 'Unknown Category',
+                        slug: 'unknown-category',
+                        status: true,
+                        level: 0
+                    },
+                    brand: product.brand || {
+                        brandId: 0,
+                        name: 'Unknown Brand',
+                        slug: 'unknown-brand',
+                        status: true
+                    }
+                };
+            });
+
+            return products;
+        } catch (error) {
+            console.error(`Error fetching products by categories:`, error);
+            throw error;
+        }
+    },
+
+    /**
+     * Get products by category (compatibility with old API)
      */
     async getProductsByCategory(categoryId: number): Promise<ProductResponseDTO[]> {
         try {
@@ -211,7 +273,46 @@ const ProductService = {
     },
 
     /**
-     * Get products by brand
+     * Get products by brands - support for multiple brands
+     */
+    async getProductsByBrands(brandIds: number[]): Promise<ProductResponseDTO[]> {
+        try {
+            // Sử dụng brandIds làm tham số query
+            const response = await api.get<ProductResponseDTO[]>(`/public/products/brands`, {
+                params: {
+                    brandIds: brandIds.join(',')
+                }
+            });
+
+            // Validate and fix any products with missing data
+            const products = response.data.map(product => {
+                return {
+                    ...product,
+                    category: product.category || {
+                        categoryId: 0,
+                        name: 'Unknown Category',
+                        slug: 'unknown-category',
+                        status: true,
+                        level: 0
+                    },
+                    brand: product.brand || {
+                        brandId: 0, // Không thể gán một brandId cụ thể vì có nhiều
+                        name: 'Unknown Brand',
+                        slug: 'unknown-brand',
+                        status: true
+                    }
+                };
+            });
+
+            return products;
+        } catch (error) {
+            console.error(`Error fetching products by brands:`, error);
+            throw error;
+        }
+    },
+
+    /**
+     * Get products by brand (compatibility with old API)
      */
     async getProductsByBrand(brandId: number): Promise<ProductResponseDTO[]> {
         try {
@@ -396,7 +497,7 @@ const ProductService = {
     },
 
     /**
-     * Search products
+     * Search products - cập nhật để hỗ trợ nhiều danh mục và thương hiệu
      */
     async searchProducts(params: ProductSearchRequest): Promise<PageResponse<ProductResponseDTO>> {
         const {
@@ -405,6 +506,9 @@ const ProductService = {
             maxPrice,
             categoryId,
             brandId,
+            // Thêm mới
+            categoryIds,
+            brandIds,
             page = 0,
             size = 12,
             sortBy = 'createdAt',
@@ -412,18 +516,32 @@ const ProductService = {
         } = params;
 
         try {
+            // Xây dựng tham số query
+            const queryParams: any = {
+                keyword,
+                minPrice,
+                maxPrice,
+                page,
+                size,
+                sortBy,
+                sortDir
+            };
+
+            // Ưu tiên sử dụng mảng ids nếu có
+            if (categoryIds && categoryIds.length > 0) {
+                queryParams.categoryIds = categoryIds.join(',');
+            } else if (categoryId !== undefined) {
+                queryParams.categoryId = categoryId;
+            }
+
+            if (brandIds && brandIds.length > 0) {
+                queryParams.brandIds = brandIds.join(',');
+            } else if (brandId !== undefined) {
+                queryParams.brandId = brandId;
+            }
+
             const response = await api.get<PageResponse<ProductResponseDTO>>('/public/products/search', {
-                params: {
-                    keyword,
-                    minPrice,
-                    maxPrice,
-                    categoryId,
-                    brandId,
-                    page,
-                    size,
-                    sortBy,
-                    sortDir
-                }
+                params: queryParams
             });
 
             // Check and fix content if needed
@@ -456,26 +574,53 @@ const ProductService = {
     },
 
     /**
-     * Get filtered products
+     * Get filtered products - cập nhật để hỗ trợ nhiều danh mục và thương hiệu
      */
-    async getFilteredProducts(
-        categoryId?: number,
-        brandId?: number,
-        page: number = 0,
-        size: number = 12,
-        sortBy: string = 'createdAt',
-        sortDir: string = 'desc'
-    ): Promise<PageResponse<ProductResponseDTO>> {
+    async getFilteredProducts(params: ProductFilterParams = {}): Promise<PageResponse<ProductResponseDTO>> {
+        const {
+            categoryId,
+            brandId,
+            // Thêm mới
+            categoryIds,
+            brandIds,
+            minPrice,
+            maxPrice,
+            search,
+            page = 0,
+            size = 12,
+            sortBy = 'createdAt',
+            sortDir = 'desc'
+        } = params;
+
         try {
+            // Xây dựng tham số query
+            const queryParams: any = {
+                page,
+                size,
+                sortBy,
+                sortDir,
+                search,
+                minPrice,
+                maxPrice
+            };
+
+            // Ưu tiên sử dụng mảng ids nếu có
+            if (categoryIds && categoryIds.length > 0) {
+                queryParams.categoryIds = categoryIds.join(',');
+            } else if (categoryId !== undefined) {
+                queryParams.categoryId = categoryId;
+            }
+
+            if (brandIds && brandIds.length > 0) {
+                queryParams.brandIds = brandIds.join(',');
+            } else if (brandId !== undefined) {
+                queryParams.brandId = brandId;
+            }
+
+            console.log('Filtered products request params:', queryParams);
+
             const response = await api.get<PageResponse<ProductResponseDTO>>('/public/products/filter', {
-                params: {
-                    categoryId,
-                    brandId,
-                    page,
-                    size,
-                    sortBy,
-                    sortDir
-                }
+                params: queryParams
             });
 
             // Check and fix content if needed

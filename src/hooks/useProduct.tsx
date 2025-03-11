@@ -13,6 +13,14 @@ import {
     fetchLatestProductsSuccess,
     fetchOnSaleProductsSuccess,
     setSearchTerm,
+    // Cập nhật import để sử dụng với mảng
+    setCategoryIds,
+    setBrandIds,
+    addCategoryId,
+    removeCategoryId,
+    addBrandId,
+    removeBrandId,
+    // Giữ lại các imports cũ cho tương thích ngược
     setSelectedCategory,
     setSelectedBrand,
     setPriceRange,
@@ -21,13 +29,14 @@ import {
     clearFilters,
     clearProductDetail,
     setSortBy,
-    setSortDir
+    setSortDir,
+    setSorting
 } from '../redux/slices/productSlice';
 import {
     selectProducts,
     selectTotalProducts,
-    selectProductsLoading,
-    selectProductsError,
+    selectProductLoading,
+    selectProductError,
     selectSelectedProduct,
     selectProductImages,
     selectProductVariants,
@@ -39,6 +48,10 @@ import {
     selectPageSize,
     selectTotalPages,
     selectSearchTerm,
+    // Cập nhật selectors để sử dụng với mảng
+    selectSelectedCategories,
+    selectSelectedBrands,
+    // Giữ lại các selectors cũ cho tương thích ngược
     selectSelectedCategory,
     selectSelectedBrand,
     selectPriceRange,
@@ -46,7 +59,12 @@ import {
     selectAvailableColors,
     selectPrimaryProductImage,
     selectCategories,
-    selectBrands
+    selectBrands,
+    selectSortBy,
+    selectSortDir,
+    // Thêm selectors mới hỗ trợ hiển thị tên
+    selectSelectedCategoryNames,
+    selectSelectedBrandNames
 } from '../redux/selectors/productSelectors';
 import ProductService from '../services/product.service';
 import {
@@ -57,15 +75,14 @@ import {
     PageResponse
 } from '../types/product.types';
 import { useRef, useCallback } from 'react';
-import { RootState } from '../redux/store';
 
 const useProduct = () => {
     const dispatch = useDispatch<AppDispatch>();
 
     const products = useSelector(selectProducts);
     const totalProducts = useSelector(selectTotalProducts);
-    const loading = useSelector(selectProductsLoading);
-    const error = useSelector(selectProductsError);
+    const loading = useSelector(selectProductLoading);
+    const error = useSelector(selectProductError);
     const selectedProduct = useSelector(selectSelectedProduct);
     const productImages = useSelector(selectProductImages);
     const productVariants = useSelector(selectProductVariants);
@@ -77,16 +94,27 @@ const useProduct = () => {
     const pageSize = useSelector(selectPageSize);
     const totalPages = useSelector(selectTotalPages);
     const searchTerm = useSelector(selectSearchTerm);
+
+    // Sử dụng selectors mới (mảng)
+    const selectedCategories = useSelector(selectSelectedCategories);
+    const selectedBrands = useSelector(selectSelectedBrands);
+
+    // Giữ lại selectors cũ cho tương thích ngược
     const selectedCategory = useSelector(selectSelectedCategory);
     const selectedBrand = useSelector(selectSelectedBrand);
+
+    // Thêm selectors mới hiển thị tên
+    const selectedCategoryNames = useSelector(selectSelectedCategoryNames);
+    const selectedBrandNames = useSelector(selectSelectedBrandNames);
+
     const priceRange = useSelector(selectPriceRange);
     const availableSizes = useSelector(selectAvailableSizes);
     const availableColors = useSelector(selectAvailableColors);
     const primaryImage = useSelector(selectPrimaryProductImage);
     const categories = useSelector(selectCategories);
     const brands = useSelector(selectBrands);
-    const sortBy = useSelector((state: RootState) => state.product.sortBy);
-    const sortDir = useSelector((state: RootState) => state.product.sortDir);
+    const sortBy = useSelector(selectSortBy);
+    const sortDir = useSelector(selectSortDir);
 
     const lastRequestRef = useRef({
         params: {} as ProductFilterParams,
@@ -152,11 +180,23 @@ const useProduct = () => {
 
         dispatch(fetchProductsStart());
         try {
-            const finalParams = {
+            // Cập nhật params để hỗ trợ mảng danh mục và thương hiệu
+            const finalParams: ProductFilterParams = {
                 ...params,
                 sortBy: params.sortBy || sortBy || 'createdAt',
                 sortDir: params.sortDir || sortDir || 'desc'
             };
+
+            // Nếu categoryIds hoặc brandIds không được chỉ định trong tham số,
+            // nhưng chúng ta đã có các ID được chọn trong state, thêm chúng vào finalParams
+            if (!params.categoryIds && !params.categoryId && selectedCategories.length > 0) {
+                finalParams.categoryIds = selectedCategories;
+            }
+
+            if (!params.brandIds && !params.brandId && selectedBrands.length > 0) {
+                finalParams.brandIds = selectedBrands;
+            }
+
             console.log('Fetching products with params:', finalParams);
             const response = await ProductService.getProducts(finalParams);
 
@@ -307,16 +347,33 @@ const useProduct = () => {
         }
     };
 
+    // Cập nhật lại hàm này để làm việc với mảng danh mục thay vì một danh mục
+    const getProductsByCategories = async (categoryIds: number[]): Promise<PageResponse<ProductResponseDTO>> => {
+        // Đảm bảo truyền vào một mảng hợp lệ, không phải undefined
+        dispatch(setCategoryIds(categoryIds));
+        return getProducts({ categoryIds, page: 0, sortBy, sortDir });
+    };
+
+    // Giữ lại hàm cũ cho tương thích ngược
     const getProductsByCategory = async (categoryId: number): Promise<PageResponse<ProductResponseDTO>> => {
         dispatch(setSelectedCategory(categoryId));
         return getProducts({ categoryId, page: 0, sortBy, sortDir });
     };
 
+    // Cập nhật lại hàm này để làm việc với mảng thương hiệu thay vì một thương hiệu
+    const getProductsByBrands = async (brandIds: number[]): Promise<PageResponse<ProductResponseDTO>> => {
+        // Đảm bảo truyền vào một mảng hợp lệ, không phải undefined
+        dispatch(setBrandIds(brandIds));
+        return getProducts({ brandIds, page: 0, sortBy, sortDir });
+    };
+
+    // Giữ lại hàm cũ cho tương thích ngược
     const getProductsByBrand = async (brandId: number): Promise<PageResponse<ProductResponseDTO>> => {
         dispatch(setSelectedBrand(brandId));
         return getProducts({ brandId, page: 0, sortBy, sortDir });
     };
 
+    // Cập nhật lại hàm này để hỗ trợ nhiều danh mục và thương hiệu
     const searchProducts = async (params: ProductSearchRequest): Promise<PageResponse<ProductResponseDTO>> => {
         dispatch(fetchProductsStart());
         try {
@@ -390,6 +447,23 @@ const useProduct = () => {
         }
     };
 
+    // Thêm các hàm hỗ trợ thao tác với mảng danh mục
+    const addCategory = (categoryId: number) => dispatch(addCategoryId(categoryId));
+    const removeCategory = (categoryId: number) => dispatch(removeCategoryId(categoryId));
+
+    // FIX: Sửa lỗi TypeScript TS2345 - xử lý undefined
+    const setCategories = (categoryIds: number[] | null | undefined) =>
+        dispatch(setCategoryIds(categoryIds || null));
+
+    // Thêm các hàm hỗ trợ thao tác với mảng thương hiệu
+    const addBrand = (brandId: number) => dispatch(addBrandId(brandId));
+    const removeBrand = (brandId: number) => dispatch(removeBrandId(brandId));
+
+    // FIX: Sửa lỗi TypeScript TS2345 - xử lý undefined
+    const setBrands = (brandIds: number[] | null | undefined) =>
+        dispatch(setBrandIds(brandIds || null));
+
+    // Giữ lại các hàm cũ cho tương thích ngược
     const updateSearchTerm = (term: string) => dispatch(setSearchTerm(term));
     const updateSelectedCategory = (categoryId: number | null) => dispatch(setSelectedCategory(categoryId));
     const updateSelectedBrand = (brandId: number | null) => dispatch(setSelectedBrand(brandId));
@@ -398,6 +472,8 @@ const useProduct = () => {
     };
     const updateSortBy = (sortByValue: string) => dispatch(setSortBy(sortByValue));
     const updateSortDir = (sortDirValue: 'asc' | 'desc') => dispatch(setSortDir(sortDirValue));
+    const updateSorting = (sortByValue: string, sortDirValue: 'asc' | 'desc') =>
+        dispatch(setSorting({ sortBy: sortByValue, sortDir: sortDirValue }));
     const updatePage = (page: number) => dispatch(setCurrentPage(page));
     const updatePageSize = (size: number) => dispatch(setPageSize(size));
     const resetFilters = () => dispatch(clearFilters());
@@ -407,14 +483,16 @@ const useProduct = () => {
         if (currentPage < totalPages - 1) {
             const nextPage = currentPage + 1;
             dispatch(setCurrentPage(nextPage));
+
+            // Cập nhật để sử dụng mảng thay vì giá trị đơn
             return getProducts({
                 page: nextPage,
                 size: pageSize,
                 search: searchTerm,
-                categoryId: selectedCategory || undefined,
-                brandId: selectedBrand || undefined,
-                minPrice: priceRange.min !== null ? priceRange.min : undefined,
-                maxPrice: priceRange.max !== null ? priceRange.max : undefined,
+                categoryIds: selectedCategories.length > 0 ? selectedCategories : null,
+                brandIds: selectedBrands.length > 0 ? selectedBrands : null,
+                minPrice: priceRange.min !== null ? priceRange.min : null,
+                maxPrice: priceRange.max !== null ? priceRange.max : null,
                 sortBy,
                 sortDir
             });
@@ -426,14 +504,16 @@ const useProduct = () => {
         if (currentPage > 0) {
             const prevPage = currentPage - 1;
             dispatch(setCurrentPage(prevPage));
+
+            // Cập nhật để sử dụng mảng thay vì giá trị đơn
             return getProducts({
                 page: prevPage,
                 size: pageSize,
                 search: searchTerm,
-                categoryId: selectedCategory || undefined,
-                brandId: selectedBrand || undefined,
-                minPrice: priceRange.min !== null ? priceRange.min : undefined,
-                maxPrice: priceRange.max !== null ? priceRange.max : undefined,
+                categoryIds: selectedCategories.length > 0 ? selectedCategories : null,
+                brandIds: selectedBrands.length > 0 ? selectedBrands : null,
+                minPrice: priceRange.min !== null ? priceRange.min : null,
+                maxPrice: priceRange.max !== null ? priceRange.max : null,
                 sortBy,
                 sortDir
             });
@@ -441,10 +521,14 @@ const useProduct = () => {
         return null;
     };
 
+    // Cập nhật applyFilters để hỗ trợ nhiều danh mục và thương hiệu
     const applyFilters = async (filters: {
         searchTerm?: string;
         categoryId?: number | null;
         brandId?: number | null;
+        // Thêm tham số mới
+        categoryIds?: number[] | null;
+        brandIds?: number[] | null;
         minPrice?: number | null;
         maxPrice?: number | null;
         page?: number;
@@ -456,12 +540,21 @@ const useProduct = () => {
         if (filters.searchTerm !== undefined && filters.searchTerm !== searchTerm) {
             stateUpdates.push(() => dispatch(setSearchTerm(filters.searchTerm!)));
         }
-        if (filters.categoryId !== undefined && filters.categoryId !== selectedCategory) {
+
+        // Ưu tiên xử lý categoryIds nếu có - FIX: Đảm bảo không truyền undefined
+        if (filters.categoryIds !== undefined) {
+            stateUpdates.push(() => dispatch(setCategoryIds(filters.categoryIds || null)));
+        } else if (filters.categoryId !== undefined && filters.categoryId !== selectedCategory) {
             stateUpdates.push(() => dispatch(setSelectedCategory(nullifyUndefined(filters.categoryId))));
         }
-        if (filters.brandId !== undefined && filters.brandId !== selectedBrand) {
+
+        // Ưu tiên xử lý brandIds nếu có - FIX: Đảm bảo không truyền undefined
+        if (filters.brandIds !== undefined) {
+            stateUpdates.push(() => dispatch(setBrandIds(filters.brandIds || null)));
+        } else if (filters.brandId !== undefined && filters.brandId !== selectedBrand) {
             stateUpdates.push(() => dispatch(setSelectedBrand(nullifyUndefined(filters.brandId))));
         }
+
         if ((filters.minPrice !== undefined && filters.minPrice !== priceRange.min) ||
             (filters.maxPrice !== undefined && filters.maxPrice !== priceRange.max)) {
             const newMin = nullifyUndefined(filters.minPrice !== undefined ? filters.minPrice : priceRange.min);
@@ -481,25 +574,58 @@ const useProduct = () => {
 
         stateUpdates.forEach(update => update());
 
+        // Xây dựng appliedFilters với hỗ trợ cho cả mảng và giá trị đơn
+        // FIX: Đảm bảo sử dụng null thay vì undefined
         const appliedFilters: ProductFilterParams = {
             page,
             size: pageSize,
             search: filters.searchTerm !== undefined ? filters.searchTerm : searchTerm,
-            categoryId: (filters.categoryId !== undefined ? filters.categoryId : selectedCategory) || undefined,
-            brandId: (filters.brandId !== undefined ? filters.brandId : selectedBrand) || undefined,
-            minPrice: filters.minPrice !== undefined
-                ? (filters.minPrice !== null ? filters.minPrice : undefined)
-                : (priceRange.min !== null ? priceRange.min : undefined),
-            maxPrice: filters.maxPrice !== undefined
-                ? (filters.maxPrice !== null ? filters.maxPrice : undefined)
-                : (priceRange.max !== null ? priceRange.max : undefined),
             sortBy: filters.sortBy !== undefined ? filters.sortBy : sortBy,
             sortDir: filters.sortDir !== undefined ? filters.sortDir : sortDir
         };
 
+        // Xử lý category - ưu tiên mảng - FIX: Sử dụng null thay vì undefined
+        if (filters.categoryIds !== undefined) {
+            appliedFilters.categoryIds = filters.categoryIds && filters.categoryIds.length > 0 ?
+                filters.categoryIds : null;
+        } else if (filters.categoryId !== undefined) {
+            appliedFilters.categoryId = filters.categoryId || null;
+        } else if (selectedCategories.length > 0) {
+            appliedFilters.categoryIds = selectedCategories;
+        } else if (selectedCategory) {
+            appliedFilters.categoryId = selectedCategory;
+        }
+
+        // Xử lý brand - ưu tiên mảng - FIX: Sử dụng null thay vì undefined
+        if (filters.brandIds !== undefined) {
+            appliedFilters.brandIds = filters.brandIds && filters.brandIds.length > 0 ?
+                filters.brandIds : null;
+        } else if (filters.brandId !== undefined) {
+            appliedFilters.brandId = filters.brandId || null;
+        } else if (selectedBrands.length > 0) {
+            appliedFilters.brandIds = selectedBrands;
+        } else if (selectedBrand) {
+            appliedFilters.brandId = selectedBrand;
+        }
+
+        // Xử lý price range - FIX: Sử dụng null thay vì undefined
+        if (filters.minPrice !== undefined) {
+            appliedFilters.minPrice = filters.minPrice;
+        } else if (priceRange.min !== null) {
+            appliedFilters.minPrice = priceRange.min;
+        }
+
+        if (filters.maxPrice !== undefined) {
+            appliedFilters.maxPrice = filters.maxPrice;
+        } else if (priceRange.max !== null) {
+            appliedFilters.maxPrice = priceRange.max;
+        }
+
+        // Loại bỏ các thuộc tính null/undefined
         Object.keys(appliedFilters).forEach(key => {
-            if (appliedFilters[key as keyof ProductFilterParams] === undefined) {
-                delete appliedFilters[key as keyof ProductFilterParams];
+            const k = key as keyof ProductFilterParams;
+            if (appliedFilters[k] === undefined || appliedFilters[k] === null) {
+                delete appliedFilters[k];
             }
         });
 
@@ -523,8 +649,17 @@ const useProduct = () => {
         pageSize,
         totalPages,
         searchTerm,
+
+        // Thêm thuộc tính mới
+        selectedCategories,
+        selectedBrands,
+        selectedCategoryNames,
+        selectedBrandNames,
+
+        // Giữ lại các thuộc tính cũ cho tương thích ngược
         selectedCategory,
         selectedBrand,
+
         priceRange,
         availableSizes,
         availableColors,
@@ -533,23 +668,42 @@ const useProduct = () => {
         brands,
         sortBy,
         sortDir,
+
         getProducts,
         getProductById,
         getProductBySlug,
+
+        // Thêm các phương thức mới
+        getProductsByCategories,
+        getProductsByBrands,
+
+        // Giữ lại các phương thức cũ
         getProductsByCategory,
         getProductsByBrand,
+
         searchProducts,
         getFeaturedProducts,
         getLatestProducts,
         getProductsOnSale,
         checkVariantAvailability,
         loadHomepageData,
+
+        // Thêm các phương thức mới
+        addCategory,
+        removeCategory,
+        setCategories,
+        addBrand,
+        removeBrand,
+        setBrands,
+
+        // Giữ lại các phương thức cũ
         updateSearchTerm,
         updateSelectedCategory,
         updateSelectedBrand,
         updatePriceRange,
         updateSortBy,
         updateSortDir,
+        updateSorting,
         updatePage,
         updatePageSize,
         resetFilters,

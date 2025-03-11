@@ -168,7 +168,7 @@ const ProductDetailPage: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
-            <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="mx-auto px-4 sm:px-6 lg:px-8 py-6">
                 {/* Breadcrumb */}
                 <nav
                     className="flex items-center text-sm mb-8 text-gray-600 dark:text-gray-300 overflow-x-auto whitespace-nowrap"

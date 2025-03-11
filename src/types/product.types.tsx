@@ -1,4 +1,7 @@
-// Product DTO interfaces
+// Product Response DTO
+import {CategoryDTO} from "./category.types.tsx";
+import {BrandDTO} from "./brand.types.tsx";
+
 export interface ProductResponseDTO {
     productId: number;
     name: string;
@@ -14,26 +17,13 @@ export interface ProductResponseDTO {
     updatedAt: string;
 }
 
-export interface CategoryDTO {
-    categoryId: number;
-    name: string;
-    slug: string;
-    description?: string;
-    status: boolean;
-    parentId?: number | null;
-    level: number;
+// Product Image DTOs
+export interface ProductImageDTO {
+    imageUrl: string;
+    isPrimary: boolean;
+    displayOrder?: number;
 }
 
-export interface BrandDTO {
-    brandId: number;
-    name: string;
-    slug: string;
-    description?: string;
-    logo?: string;
-    status: boolean;
-}
-
-// Product Image DTO
 export interface ProductImageResponseDTO {
     imageId: number;
     productId: number;
@@ -42,7 +32,17 @@ export interface ProductImageResponseDTO {
     isPrimary: boolean;
 }
 
-// Product Variant DTO
+// Product Variant DTOs
+export interface ProductVariantDTO {
+    variantId?: number;
+    size: string;
+    color: string;
+    stockQuantity: number;
+    status: boolean;
+    imageUrl?: string | null;
+    sku?: string;
+}
+
 export interface ProductVariantResponseDTO {
     variantId: number;
     productId: number;
@@ -56,17 +56,24 @@ export interface ProductVariantResponseDTO {
     updatedAt: string;
 }
 
-// Request parameters for product filtering
+// Request parameters for product filtering - cập nhật để hỗ trợ nhiều danh mục và thương hiệu
 export interface ProductFilterParams {
     page?: number;
     size?: number;
     sortBy?: string;
     sortDir?: 'asc' | 'desc';
     search?: string;
-    categoryId?: number;
-    brandId?: number;
-    minPrice?: number;
-    maxPrice?: number;
+
+    // Giữ lại cho khả năng tương thích ngược
+    categoryId?: number | null;
+    brandId?: number | null;
+
+    // Sửa để không cho phép undefined (chỉ số hoặc null)
+    categoryIds?: number[] | null;
+    brandIds?: number[] | null;
+
+    minPrice?: number | null;
+    maxPrice?: number | null;
     status?: boolean;
 }
 
@@ -100,7 +107,7 @@ export interface PageResponse<T> {
     empty: boolean;
 }
 
-// Special collections response types
+// Special collections request types
 export interface FeaturedProductsRequest {
     limit?: number;
 }
@@ -116,12 +123,20 @@ export interface RelatedProductsRequest {
     limit?: number;
 }
 
+// Cập nhật để hỗ trợ nhiều danh mục và thương hiệu
 export interface ProductSearchRequest {
     keyword: string;
-    minPrice?: number;
-    maxPrice?: number;
+    minPrice?: number | null;
+    maxPrice?: number | null;
+
+    // Giữ lại cho khả năng tương thích ngược
     categoryId?: number;
     brandId?: number;
+
+    // Thêm mới để hỗ trợ nhiều danh mục/thương hiệu
+    categoryIds?: number[] | null;
+    brandIds?: number[] | null;
+
     page?: number;
     size?: number;
     sortBy?: string;
@@ -137,22 +152,6 @@ export interface VariantAvailabilityRequest {
 
 export interface VariantAvailabilityResponse {
     available: boolean;
-}
-
-
-// types/product.types.ts
-export interface ProductImageDTO {
-    imageUrl: string;
-    isPrimary: boolean;
-}
-
-export interface ProductVariantDTO {
     variantId?: number;
-    size: string;
-    color: string;
-    stockQuantity: number;
-    status: boolean;
-    imageUrl?: string | null;
-    sku?: string;
+    stockQuantity?: number;
 }
-
