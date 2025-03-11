@@ -18,7 +18,7 @@ const PromotionBanner: React.FC = () => {
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
             >
-                <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-primary/40 z-10"></div>
+                <div className="absolute inset-0 bg-gradient-to-r from-black/40 via-transparent to-primary/40 z-10" />
                 <LazyLoadImage
                     src={promotionImageUrl}
                     alt="Khuyến mãi mùa hè"
@@ -72,18 +72,12 @@ const PromotionBanner: React.FC = () => {
                             <span>Mua Ngay</span>
                             <svg
                                 xmlns="http://www.w3.org/2000/svg"
-                                width="14"
-                                height="14"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
+                                width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                                 className="transform group-hover:translate-x-1 transition-transform duration-300"
                             >
-                                <path d="M5 12h14"/>
-                                <path d="M12 5l7 7-7 7"/>
+                                <path d="M5 12h14" />
+                                <path d="M12 5l7 7-7 7" />
                             </svg>
                         </Link>
                     </motion.div>

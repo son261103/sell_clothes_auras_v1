@@ -35,7 +35,10 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                 } catch (err) {
                     const axiosError = err as AxiosError<ApiResponse>;
                     console.error('Không thể lấy thông tin người dùng:', axiosError);
-                    if (axiosError.response?.status === 401) {
+
+                    // Chỉ đăng xuất nếu không ở trang profile
+                    const currentPath = window.location.pathname;
+                    if (axiosError.response?.status === 401 && !currentPath.includes('/profile')) {
                         toast.error('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
                         await signOut();
                     } else if (axiosError.response?.status === 400) {
