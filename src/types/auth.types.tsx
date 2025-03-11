@@ -1,3 +1,5 @@
+// File: auth.types.ts
+
 // User status enum (matching backend)
 export enum UserStatus {
     ACTIVE = 1,
@@ -52,6 +54,7 @@ export interface ApiResponse {
     success: boolean;
     message: string;
     userStatus?: UserStatus;
+    email?: string; // Thêm trường này để backend trả về email trong trường hợp lỗi
 }
 
 export interface TokenResponse {
