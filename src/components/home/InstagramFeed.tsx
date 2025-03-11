@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
-import { motion } from 'framer-motion';
+import { motion, useInView, AnimatePresence, useScroll, useTransform } from 'framer-motion';
 import 'react-lazy-load-image-component/src/effects/blur.css';
 
 interface InstagramPost {
@@ -13,6 +13,18 @@ interface InstagramPost {
 
 const InstagramFeed: React.FC = () => {
     const [hoveredPost, setHoveredPost] = useState<number | null>(null);
+    const [expandedPost, setExpandedPost] = useState<number | null>(null);
+
+    const containerRef = useRef<HTMLDivElement>(null);
+    const isInView = useInView(containerRef, { once: false, amount: 0.2 });
+
+    // Parallax scroll effect
+    const { scrollYProgress } = useScroll({
+        target: containerRef,
+        offset: ["start end", "end start"]
+    });
+
+    const y = useTransform(scrollYProgress, [0, 1], [50, -50]);
 
     const instagramPosts: InstagramPost[] = [
         {
@@ -71,136 +83,299 @@ const InstagramFeed: React.FC = () => {
     };
 
     const itemVariants = {
-        hidden: { opacity: 0, y: 15 },
-        show: { opacity: 1, y: 0, transition: { duration: 0.4 } }
+        hidden: { opacity: 0, y: 50 },
+        show: {
+            opacity: 1,
+            y: 0,
+            transition: {
+                duration: 0.5,
+                type: "spring",
+                stiffness: 100
+            }
+        }
+    };
+
+    const handleExpand = (id: number) => {
+        setExpandedPost(expandedPost === id ? null : id);
     };
 
     return (
-        <section className="px-4 py-4 md:px-8 max-w-7xl mx-auto py-2  bg-white dark:bg-secondary rounded-lg">
-            <div className="text-center mb-3">
+        <section
+            className="px-4 py-8 md:px-8 max-w-7xl mx-auto bg-white dark:bg-secondary rounded-xl overflow-hidden"
+            ref={containerRef}
+        >
+            <motion.div
+                className="text-center mb-8"
+                initial={{ opacity: 0, y: -20 }}
+                animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: -20 }}
+                transition={{ duration: 0.6 }}
+            >
                 <motion.h2
-                    className="text-2xl font-bold mb-1 text-primary"
-                    initial={{ opacity: 0, y: -5 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.3 }}
+                    className="text-3xl font-bold mb-2 text-primary inline-flex items-center gap-2"
+                    animate={{
+                        scale: [1, 1.03, 1],
+                        transition: { duration: 3, repeat: Infinity }
+                    }}
                 >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="text-accent"
+                    >
+                        <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+                        <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+                        <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+                    </svg>
                     Instagram Của Chúng Tôi
                 </motion.h2>
                 <motion.p
-                    className="max-w-xl mx-auto text-secondary/80 dark:text-textLight/80 text-sm mb-3"
-                    initial={{ opacity: 0, y: -5 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.3, delay: 0.1 }}
+                    className="max-w-xl mx-auto text-secondary/80 dark:text-textLight/80 text-base mb-4"
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: -10 }}
+                    transition={{ duration: 0.6, delay: 0.1 }}
                 >
                     Theo dõi chúng tôi{' '}
-                    <a
+                    <motion.a
                         href="https://instagram.com"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary font-bold inline-flex items-center gap-1 hover:text-primary/80 transition"
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
                             <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
                             <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
                         </svg>
                         @AURAS
-                    </a>{' '}
-                    để cập nhật các xu hướng mới nhất
+                    </motion.a>{' '}
+                    để cập nhật các xu hướng mới nhất và cơ hội nhận quà
                 </motion.p>
-            </div>
+            </motion.div>
 
             <motion.div
-                className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2"
+                className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4"
                 variants={containerVariants}
                 initial="hidden"
-                whileInView="show"
-                viewport={{ once: true, margin: "-50px" }}
+                animate={isInView ? "show" : "hidden"}
+                style={{ y }}
             >
                 {instagramPosts.map((post) => (
-                    <motion.a
+                    <motion.div
                         key={post.id}
-                        href="#"
-                        className="relative group overflow-hidden aspect-square rounded-md shadow-sm border border-highlight/10 dark:border-secondary/30"
                         variants={itemVariants}
                         onMouseEnter={() => setHoveredPost(post.id)}
                         onMouseLeave={() => setHoveredPost(null)}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
+                        layoutId={`post-${post.id}`}
+                        onClick={() => handleExpand(post.id)}
                     >
-                        <LazyLoadImage
-                            src={post.image}
-                            alt={`Ảnh Instagram ${post.id}`}
-                            effect="blur"
-                            className={`w-full h-full object-cover transition duration-500 ${
-                                hoveredPost === post.id ? 'scale-110' : 'scale-100'
-                            }`}
-                            wrapperClassName="w-full h-full"
-                            placeholderSrc="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2VlZWVlZSIvPjwvc3ZnPg=="
-                        />
-                        <div
-                            className={`absolute inset-0 bg-gradient-to-t from-primary/90 to-primary/40 flex flex-col items-center justify-center transition-opacity duration-300 p-2 ${
-                                hoveredPost === post.id ? 'opacity-100' : 'opacity-0'
-                            }`}
+                        <motion.div
+                            className="relative overflow-hidden aspect-square rounded-xl shadow-md border border-highlight/10 dark:border-secondary/30 cursor-pointer group"
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.97 }}
                         >
-                            <div className="flex items-center gap-3 mb-1">
-                                <span className="text-white flex items-center gap-1 text-xs">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
-                                    </svg>
-                                    {post.likes}
-                                </span>
-                                <span className="text-white flex items-center gap-1 text-xs">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
-                                    </svg>
-                                    {post.comments}
-                                </span>
-                            </div>
-                            <p className="text-white text-[10px] text-center line-clamp-2">
-                                {post.caption}
-                            </p>
-                        </div>
+                            <LazyLoadImage
+                                src={post.image}
+                                alt={`Ảnh Instagram ${post.id}`}
+                                effect="blur"
+                                className="w-full h-full object-cover transition duration-700"
+                                wrapperClassName="w-full h-full"
+                                placeholderSrc="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2VlZWVlZSIvPjwvc3ZnPg=="
+                                style={{
+                                    transform: hoveredPost === post.id ? 'scale(1.1)' : 'scale(1)'
+                                }}
+                            />
 
-                        {/* Instagram icon overlay when not hovered */}
-                        <div
-                            className={`absolute top-1 right-1 text-white bg-primary/70 p-0.5 rounded-full transition-opacity duration-300 ${
-                                hoveredPost === post.id ? 'opacity-0' : 'opacity-100'
-                            }`}
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
-                                <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
-                                <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
-                            </svg>
-                        </div>
-                    </motion.a>
+                            {/* Overlay on hover */}
+                            <motion.div
+                                className="absolute inset-0 bg-gradient-to-t from-primary/90 to-primary/40 flex flex-col items-center justify-center p-3"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: hoveredPost === post.id ? 1 : 0 }}
+                                transition={{ duration: 0.3 }}
+                            >
+                                <div className="flex items-center gap-4 mb-2">
+                                    <motion.span
+                                        className="text-white flex items-center gap-1 text-sm"
+                                        whileHover={{ scale: 1.1 }}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                                        </svg>
+                                        {post.likes}
+                                    </motion.span>
+                                    <motion.span
+                                        className="text-white flex items-center gap-1 text-sm"
+                                        whileHover={{ scale: 1.1 }}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                                        </svg>
+                                        {post.comments}
+                                    </motion.span>
+                                </div>
+                                <p className="text-white text-sm text-center line-clamp-3">
+                                    {post.caption}
+                                </p>
+                            </motion.div>
+
+                            {/* Instagram icon and pulse effect */}
+                            <motion.div
+                                className="absolute top-2 right-2 text-white bg-primary/70 p-1 rounded-full"
+                                initial={{ opacity: 1 }}
+                                animate={{
+                                    opacity: hoveredPost === post.id ? 0 : 1,
+                                    scale: [1, 1.1, 1],
+                                }}
+                                transition={{
+                                    opacity: { duration: 0.3 },
+                                    scale: { duration: 2, repeat: Infinity }
+                                }}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+                                    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+                                    <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+                                </svg>
+                            </motion.div>
+                        </motion.div>
+                    </motion.div>
                 ))}
             </motion.div>
 
-            <div className="text-center mt-3">
+            {/* Follow button */}
+            <motion.div
+                className="text-center mt-8"
+                initial={{ opacity: 0, y: 20 }}
+                animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+                transition={{ duration: 0.6, delay: 0.3 }}
+            >
                 <motion.a
                     href="https://instagram.com"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-4 py-1.5 border border-primary text-primary font-medium rounded-full hover:bg-primary hover:text-white transition duration-300 text-sm"
-                    initial={{ opacity: 0, y: 5 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.3 }}
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.97 }}
+                    className="inline-flex items-center gap-2 px-6 py-3 border-2 border-primary text-primary font-bold rounded-full hover:bg-primary hover:text-white transition duration-300 text-base group"
+                    whileHover={{ scale: 1.05, boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }}
+                    whileTap={{ scale: 0.95 }}
                 >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="group-hover:rotate-12 transition-transform duration-300"
+                    >
                         <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
                         <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
                         <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
                     </svg>
                     Theo dõi @AURAS
+                    <motion.svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="group-hover:translate-x-1 transition-transform duration-300"
+                    >
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                        <polyline points="12 5 19 12 12 19"></polyline>
+                    </motion.svg>
                 </motion.a>
-            </div>
+            </motion.div>
+
+            {/* Expanded post modal */}
+            <AnimatePresence>
+                {expandedPost !== null && (
+                    <motion.div
+                        className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setExpandedPost(null)}
+                    >
+                        <motion.div
+                            layoutId={`post-${expandedPost}`}
+                            className="bg-white dark:bg-secondary rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex flex-col md:flex-row h-full">
+                                {/* Image */}
+                                <div className="md:w-2/3 relative overflow-hidden">
+                                    <LazyLoadImage
+                                        src={instagramPosts.find(post => post.id === expandedPost)?.image || ''}
+                                        alt={`Instagram post ${expandedPost}`}
+                                        effect="blur"
+                                        className="w-full h-full object-cover"
+                                    />
+                                </div>
+
+                                {/* Content */}
+                                <div className="md:w-1/3 p-4 flex flex-col">
+                                    {/* Header */}
+                                    <div className="flex items-center gap-3 border-b border-gray-200 dark:border-gray-700 pb-3">
+                                        <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white font-bold">
+                                            A
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-gray-800 dark:text-white">@AURAS</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">Official Account</p>
+                                        </div>
+                                        <button
+                                            className="ml-auto text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
+                                            onClick={() => setExpandedPost(null)}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                                            </svg>
+                                        </button>
+                                    </div>
+
+                                    {/* Caption */}
+                                    <div className="py-4 flex-grow overflow-auto">
+                                        <p className="text-gray-800 dark:text-white text-sm">
+                                            {instagramPosts.find(post => post.id === expandedPost)?.caption}
+                                        </p>
+                                    </div>
+
+                                    {/* Stats */}
+                                    <div className="border-t border-gray-200 dark:border-gray-700 pt-3 flex justify-between">
+                                        <div className="flex items-center gap-1 text-gray-700 dark:text-gray-300">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                                            </svg>
+                                            <span>{instagramPosts.find(post => post.id === expandedPost)?.likes} likes</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 text-gray-700 dark:text-gray-300">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                                            </svg>
+                                            <span>{instagramPosts.find(post => post.id === expandedPost)?.comments} comments</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </section>
     );
 };
