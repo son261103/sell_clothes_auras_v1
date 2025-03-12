@@ -1,9 +1,10 @@
-import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosError } from 'axios';
-import { toast } from 'react-hot-toast';
-import { store } from '../redux/store';
-import { loginSuccess, logout } from '../redux/slices/authSlice';
-import { UserStatus, ApiResponse, TokenResponse } from '../types/auth.types';
-import { jwtDecode } from 'jwt-decode';
+import axios, {AxiosInstance, InternalAxiosRequestConfig, AxiosError} from 'axios';
+import {toast} from 'react-hot-toast';
+import {store} from '../redux/store';
+import {loginSuccess, logout} from '../redux/slices/authSlice';
+import {UserStatus, ApiResponse} from '../types/auth.types';
+import {jwtDecode} from 'jwt-decode';
+import AuthService from './auth.service.tsx'; // Import AuthService
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -46,12 +47,6 @@ const addAuthToken = (config: InternalAxiosRequestConfig): InternalAxiosRequestC
     return config;
 };
 
-// Create a separate instance for token refresh to avoid interceptor loops
-const tokenRefreshApi = axios.create({
-    baseURL: API_BASE_URL,
-    withCredentials: true,
-});
-
 // Flag to prevent multiple refresh requests
 let isRefreshing = false;
 // Queue of failed requests to retry after token refresh
@@ -69,6 +64,16 @@ const processQueue = (error: Error | null, token: string | null = null) => {
     failedQueue = [];
 };
 
+// Function to get refresh token from cookie
+const getRefreshToken = (): string | null => {
+    const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+        const [name, value] = cookie.trim().split('=');
+        acc[name] = value;
+        return acc;
+    }, {} as Record<string, string>);
+    return cookies['refreshToken'] || null;
+};
+
 // Hàm giải mã token và lấy email
 const getEmailFromToken = (token: string): string | null => {
     try {
@@ -78,6 +83,22 @@ const getEmailFromToken = (token: string): string | null => {
     } catch (error) {
         console.log('Lỗi khi giải mã token:', error);
         return null;
+    }
+};
+
+// Check if token is expired or about to expire
+const isTokenExpired = (token: string): boolean => {
+    if (!token) {
+        return true;
+    }
+
+    try {
+        const decoded: TokenPayload = jwtDecode(token);
+        // Check if token will expire in the next 60 seconds
+        return decoded.exp * 1000 < Date.now() + 60000;
+    } catch (error) {
+        console.error('Error decoding token:', error);
+        return true;
     }
 };
 
@@ -165,7 +186,7 @@ const handleTokenRefresh = async (error: AxiosError<ApiResponse>, apiInstance: A
 
         if (isRefreshing) {
             return new Promise<string | unknown>((resolve, reject) => {
-                failedQueue.push({ resolve, reject });
+                failedQueue.push({resolve, reject});
             })
                 .then((token) => {
                     if (originalRequest.headers && typeof token === 'string') {
@@ -182,14 +203,21 @@ const handleTokenRefresh = async (error: AxiosError<ApiResponse>, apiInstance: A
 
         try {
             console.log('Attempting to refresh token...');
-            const response = await tokenRefreshApi.post<TokenResponse>('/auth/refresh-token');
-            const newTokens = response.data;
+
+            // Get refresh token from cookie
+            const refreshToken = getRefreshToken();
+            if (!refreshToken) {
+                throw new Error('No refresh token available');
+            }
+
+            // Use AuthService to refresh token instead of direct API call
+            const newTokens = await AuthService.refreshToken();
 
             console.log('Token refresh successful');
             localStorage.setItem('accessToken', newTokens.accessToken);
 
             if (newTokens.refreshToken) {
-                document.cookie = `refreshToken=${newTokens.refreshToken}; path=/; max-age=604800;`;
+                document.cookie = `refreshToken=${newTokens.refreshToken}; path=/; max-age=604800; SameSite=Strict`;
             }
 
             store.dispatch(loginSuccess(newTokens));
@@ -268,8 +296,90 @@ const handleTokenRefresh = async (error: AxiosError<ApiResponse>, apiInstance: A
 };
 
 // Apply interceptors
-authApi.interceptors.request.use(addAuthToken, (error) => Promise.reject(error));
-publicApi.interceptors.request.use(addAuthToken, (error) => Promise.reject(error));
+authApi.interceptors.request.use(async (config) => {
+    const token = localStorage.getItem('accessToken');
+
+    // If token exists but is about to expire, refresh it proactively
+    if (token && isTokenExpired(token) && !config.url?.includes('/auth/refresh-token')) {
+        try {
+            console.log('Token about to expire, refreshing proactively');
+            const refreshToken = getRefreshToken();
+            if (!refreshToken) {
+                // If no refresh token, clear storage and redirect to login
+                localStorage.removeItem('accessToken');
+                document.cookie = 'refreshToken=; Max-Age=0; path=/;';
+                store.dispatch(logout());
+                window.location.href = '/login';
+                throw new Error('No refresh token available');
+            }
+
+            // Get new tokens
+            const newTokens = await AuthService.refreshToken();
+            localStorage.setItem('accessToken', newTokens.accessToken);
+
+            if (newTokens.refreshToken) {
+                document.cookie = `refreshToken=${newTokens.refreshToken}; path=/; max-age=604800; SameSite=Strict`;
+            }
+
+            store.dispatch(loginSuccess(newTokens));
+
+            // Update the current request with the new token
+            if (config.headers) {
+                config.headers['Authorization'] = `Bearer ${newTokens.accessToken}`;
+            }
+        } catch (error) {
+            console.error('Proactive token refresh failed:', error);
+            // Handle the error (redirect to login or show a notification)
+            localStorage.removeItem('accessToken');
+            document.cookie = 'refreshToken=; Max-Age=0; path=/;';
+            store.dispatch(logout());
+            window.location.href = '/login';
+        }
+    }
+
+    // Continue with adding the token to the request
+    return addAuthToken(config);
+}, (error) => Promise.reject(error));
+
+publicApi.interceptors.request.use(async (config) => {
+    const token = localStorage.getItem('accessToken');
+
+    // If token exists but is about to expire, refresh it proactively (same as above)
+    if (token && isTokenExpired(token) && !config.url?.includes('/auth/refresh-token')) {
+        try {
+            console.log('Token about to expire, refreshing proactively');
+            const refreshToken = getRefreshToken();
+            if (!refreshToken) {
+                localStorage.removeItem('accessToken');
+                document.cookie = 'refreshToken=; Max-Age=0; path=/;';
+                store.dispatch(logout());
+                window.location.href = '/login';
+                throw new Error('No refresh token available');
+            }
+
+            const newTokens = await AuthService.refreshToken();
+            localStorage.setItem('accessToken', newTokens.accessToken);
+
+            if (newTokens.refreshToken) {
+                document.cookie = `refreshToken=${newTokens.refreshToken}; path=/; max-age=604800; SameSite=Strict`;
+            }
+
+            store.dispatch(loginSuccess(newTokens));
+
+            if (config.headers) {
+                config.headers['Authorization'] = `Bearer ${newTokens.accessToken}`;
+            }
+        } catch (error) {
+            console.error('Proactive token refresh failed:', error);
+            localStorage.removeItem('accessToken');
+            document.cookie = 'refreshToken=; Max-Age=0; path=/;';
+            store.dispatch(logout());
+            window.location.href = '/login';
+        }
+    }
+
+    return addAuthToken(config);
+}, (error) => Promise.reject(error));
 
 authApi.interceptors.response.use(
     (response) => response,
@@ -281,5 +391,17 @@ publicApi.interceptors.response.use(
     (error) => handleTokenRefresh(error, publicApi)
 );
 
-export { authApi, publicApi };
+// Add event listener for synchronizing logout across tabs
+window.addEventListener('storage', (event) => {
+    if (event.key === 'accessToken' && !event.newValue) {
+        // Another tab cleared the token, log out in this tab too
+        document.cookie = 'refreshToken=; Max-Age=0; path=/;';
+        store.dispatch(logout());
+        if (!window.location.pathname.includes('/login')) {
+            window.location.href = '/login';
+        }
+    }
+});
+
+export {authApi, publicApi};
 export default publicApi;

@@ -23,9 +23,9 @@ const getRefreshToken = (): string | null => {
     return cookies['refreshToken'] || null;
 };
 
-// Hàm đặt refresh token vào cookie
-const setRefreshTokenCookie = (refreshToken: string) => {
-    document.cookie = `refreshToken=${refreshToken}; path=/; max-age=604800;`; // 7 ngày
+// Hàm đặt refresh token vào cookie - Enhanced with SameSite=Strict for better security
+const setRefreshTokenCookie = (refreshToken: string): void => {
+    document.cookie = `refreshToken=${refreshToken}; path=/; max-age=604800; SameSite=Strict;`; // 7 ngày
 };
 
 const AuthService = {
@@ -98,7 +98,7 @@ const AuthService = {
 
     async verifyOtp(email: string, otp: string): Promise<boolean> {
         try {
-            const response = await authApi.post<ApiResponse>('/auth/verify-otp', null, {
+            const response = await authApi.post<ApiResponse | boolean>('/auth/verify-otp', null, {
                 params: { email, otp },
             });
             console.log('Verify OTP response:', response.data);
@@ -133,26 +133,72 @@ const AuthService = {
 
     async refreshToken(): Promise<TokenResponse> {
         const refreshToken = getRefreshToken();
-        if (!refreshToken) throw new Error('No refresh token available');
+        if (!refreshToken) {
+            throw new Error('No refresh token available');
+        }
+
+        // Explicitly send the refresh token in the request body as expected by the backend
         const response = await authApi.post<TokenResponse>('/auth/refresh-token', { refreshToken });
+
+        // Store the new tokens
         localStorage.setItem('accessToken', response.data.accessToken);
         if (response.data.refreshToken) {
             setRefreshTokenCookie(response.data.refreshToken);
         }
+
         return response.data;
     },
 
     async logout(): Promise<ApiResponse> {
-        const refreshToken = getRefreshToken();
-        let response;
-        if (refreshToken) {
-            response = await authApi.post<ApiResponse>('/auth/logout', { refreshToken });
-        } else {
-            response = await authApi.post<ApiResponse>('/auth/logout', {});
+        try {
+            const refreshToken = getRefreshToken();
+            let apiResponse: ApiResponse;
+
+            if (refreshToken) {
+                try {
+                    // Try to logout on the server with the token
+                    const response = await authApi.post<ApiResponse>('/auth/logout', { refreshToken });
+                    console.log('Logout successful on server');
+                    apiResponse = response.data;
+                } catch (error) {
+                    // If server logout fails, log the error but continue with client-side logout
+                    console.error('Server logout failed, continuing with client-side logout:', error);
+                    apiResponse = {
+                        success: true,
+                        message: 'Logged out on client only'
+                    };
+                }
+            } else {
+                console.log('No refresh token found, performing client-side logout only');
+                apiResponse = {
+                    success: true,
+                    message: 'Logged out on client only'
+                };
+            }
+
+            // Always clear local storage and cookies, regardless of server response
+            localStorage.removeItem('accessToken');
+            document.cookie = 'refreshToken=; Max-Age=0; path=/;';
+
+            // Clear any other auth-related storage
+            localStorage.removeItem('pendingActivationEmail');
+            localStorage.removeItem('otpEmail');
+
+            console.log('Client-side logout complete');
+            return apiResponse;
+        } catch (error) {
+            console.error('Complete logout process failed:', error);
+
+            // Ensure tokens are removed even if there's an error
+            localStorage.removeItem('accessToken');
+            document.cookie = 'refreshToken=; Max-Age=0; path=/;';
+
+            // Return a client-generated response for UI handling
+            return {
+                success: true,
+                message: 'Forced logout on client'
+            };
         }
-        localStorage.removeItem('accessToken');
-        document.cookie = 'refreshToken=; Max-Age=0; path=/;';
-        return response.data;
     },
 
     async changePassword(changePasswordRequest: ChangePasswordRequest): Promise<ApiResponse> {
