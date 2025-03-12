@@ -2,12 +2,13 @@ import api from './api';
 import {
     BrandResponseDTO,
     BrandHierarchyDTO,
-    BrandFilterParams
+    BrandFilterParams,
 } from '../types/brand.types';
 import {
     CategoryResponseDTO,
     CategoryHierarchyDTO,
-    CategoryFilterParams, CategoryApiResponseDTO
+    CategoryFilterParams,
+    CategoryApiResponseDTO
 } from '../types/category.types';
 
 const BrandCategoryService = {
@@ -18,11 +19,51 @@ const BrandCategoryService = {
      */
     async getActiveBrands(): Promise<BrandResponseDTO[]> {
         try {
-            const response = await api.get<BrandResponseDTO[]>('/public/categories-and-brands/brands');
-            return response.data;
+            const response = await api.get<BrandResponseDTO[] | string | unknown>('/public/categories-and-brands/brands');
+
+            // Fix potential malformed response format
+            let brandData = response.data;
+
+            // Check if the response is a string that looks like concatenated arrays "[{...}][{...}]"
+            if (typeof brandData === 'string') {
+                try {
+                    // Extract just the first array
+                    const match = brandData.match(/^\[(.*?)\]/);
+                    if (match) {
+                        brandData = JSON.parse(match[0]);
+                    }
+                } catch (e) {
+                    console.error('Error parsing string response:', e);
+                }
+            }
+
+            // Check if response has a specific malformed pattern seen in logs
+            if (typeof brandData === 'object' && !Array.isArray(brandData)) {
+                const str = JSON.stringify(brandData);
+                if (str.includes('][')) {
+                    // This is likely two arrays concatenated
+                    try {
+                        const firstArrayEnd = str.indexOf(']') + 1;
+                        const firstArrayStr = str.substring(0, firstArrayEnd);
+                        brandData = JSON.parse(firstArrayStr);
+                    } catch (e) {
+                        console.error('Error extracting first array from malformed response:', e);
+                    }
+                }
+            }
+
+            // Kiểm tra phản hồi có phải mảng không
+            if (!brandData || !Array.isArray(brandData)) {
+                console.warn('Invalid brands response format:', response.data);
+                return []; // Trả về mảng rỗng thay vì ném lỗi
+            }
+
+            // Tạo bản sao của mỗi thương hiệu để đảm bảo chúng có thể mở rộng
+            return brandData.map(brand => ({ ...brand } as BrandResponseDTO));
         } catch (error) {
             console.error('Error fetching active brands:', error);
-            throw error;
+            // Trả về mảng rỗng thay vì ném lỗi
+            return [];
         }
     },
 
@@ -35,13 +76,29 @@ const BrandCategoryService = {
 
             // Validate brand data
             if (!response.data) {
-                throw new Error(`Brand with ID ${brandId} not found`);
+                console.warn(`Brand with ID ${brandId} not found`);
+                // Trả về một đối tượng thương hiệu mặc định
+                return {
+                    brandId: brandId,
+                    name: 'Unknown Brand',
+                    slug: 'unknown-brand',
+                    status: true,
+                    description: ''
+                };
             }
 
-            return response.data;
+            // Trả về một bản sao để đảm bảo đối tượng có thể mở rộng
+            return { ...response.data };
         } catch (error) {
             console.error(`Error fetching brand ${brandId}:`, error);
-            throw error;
+            // Trả về một đối tượng thương hiệu mặc định thay vì ném lỗi
+            return {
+                brandId: brandId,
+                name: 'Unknown Brand',
+                slug: 'unknown-brand',
+                status: true,
+                description: ''
+            };
         }
     },
 
@@ -50,13 +107,52 @@ const BrandCategoryService = {
      */
     async searchBrands(keyword?: string): Promise<BrandResponseDTO[]> {
         try {
-            const response = await api.get<BrandResponseDTO[]>('/public/categories-and-brands/brands/search', {
+            const response = await api.get<BrandResponseDTO[] | string | unknown>('/public/categories-and-brands/brands/search', {
                 params: { keyword }
             });
-            return response.data;
+
+            // Fix potential malformed response format
+            let brandData = response.data;
+
+            // Check if the response is a string that looks like concatenated arrays
+            if (typeof brandData === 'string') {
+                try {
+                    // Extract just the first array
+                    const match = brandData.match(/^\[(.*?)\]/);
+                    if (match) {
+                        brandData = JSON.parse(match[0]);
+                    }
+                } catch (e) {
+                    console.error('Error parsing string response:', e);
+                }
+            }
+
+            // Check if response has a specific malformed pattern
+            if (typeof brandData === 'object' && !Array.isArray(brandData)) {
+                const str = JSON.stringify(brandData);
+                if (str.includes('][')) {
+                    // This is likely two arrays concatenated
+                    try {
+                        const firstArrayEnd = str.indexOf(']') + 1;
+                        const firstArrayStr = str.substring(0, firstArrayEnd);
+                        brandData = JSON.parse(firstArrayStr);
+                    } catch (e) {
+                        console.error('Error extracting first array from malformed response:', e);
+                    }
+                }
+            }
+
+            // Kiểm tra phản hồi có phải mảng không
+            if (!brandData || !Array.isArray(brandData)) {
+                console.warn('Invalid search brands response format:', response.data);
+                return []; // Trả về mảng rỗng thay vì ném lỗi
+            }
+
+            // Tạo bản sao của mỗi thương hiệu
+            return brandData.map(brand => ({ ...brand } as BrandResponseDTO));
         } catch (error) {
             console.error('Error searching brands:', error);
-            throw error;
+            return []; // Trả về mảng rỗng thay vì ném lỗi
         }
     },
 
@@ -66,10 +162,50 @@ const BrandCategoryService = {
     async getBrandHierarchy(): Promise<BrandHierarchyDTO> {
         try {
             const response = await api.get<BrandHierarchyDTO>('/public/categories-and-brands/brands/hierarchy');
-            return response.data;
+
+            if (!response.data) {
+                console.warn('Invalid brand hierarchy response format:', response.data);
+                // Trả về cấu trúc mặc định
+                return {
+                    brands: [],
+                    statistics: {
+                        totalBrands: 0,
+                        activeBrands: 0,
+                        inactiveBrands: 0,
+                        brandsWithProducts: 0
+                    }
+                };
+            }
+
+            // Tạo bản sao sâu của dữ liệu phản hồi
+            const hierarchy = { ...response.data };
+            if (Array.isArray(hierarchy.brands)) {
+                hierarchy.brands = hierarchy.brands.map(brand => ({ ...brand }));
+            } else {
+                hierarchy.brands = [];
+            }
+
+            // Đảm bảo thuộc tính statistics đầy đủ
+            hierarchy.statistics = hierarchy.statistics || {
+                totalBrands: 0,
+                activeBrands: 0,
+                inactiveBrands: 0,
+                brandsWithProducts: 0
+            };
+
+            return hierarchy;
         } catch (error) {
             console.error('Error fetching brand hierarchy:', error);
-            throw error;
+            // Trả về cấu trúc mặc định thay vì ném lỗi
+            return {
+                brands: [],
+                statistics: {
+                    totalBrands: 0,
+                    activeBrands: 0,
+                    inactiveBrands: 0,
+                    brandsWithProducts: 0
+                }
+            };
         }
     },
 
@@ -80,16 +216,55 @@ const BrandCategoryService = {
         const { status, search } = params;
 
         try {
-            const response = await api.get<BrandResponseDTO[]>('/public/categories-and-brands/brands', {
+            const response = await api.get<BrandResponseDTO[] | string | unknown>('/public/categories-and-brands/brands', {
                 params: {
                     status,
                     search
                 }
             });
-            return response.data;
+
+            // Fix potential malformed response format
+            let brandData = response.data;
+
+            // Check if the response is a string that looks like concatenated arrays
+            if (typeof brandData === 'string') {
+                try {
+                    // Extract just the first array
+                    const match = brandData.match(/^\[(.*?)\]/);
+                    if (match) {
+                        brandData = JSON.parse(match[0]);
+                    }
+                } catch (e) {
+                    console.error('Error parsing string response:', e);
+                }
+            }
+
+            // Check if response has a specific malformed pattern
+            if (typeof brandData === 'object' && !Array.isArray(brandData)) {
+                const str = JSON.stringify(brandData);
+                if (str.includes('][')) {
+                    // This is likely two arrays concatenated
+                    try {
+                        const firstArrayEnd = str.indexOf(']') + 1;
+                        const firstArrayStr = str.substring(0, firstArrayEnd);
+                        brandData = JSON.parse(firstArrayStr);
+                    } catch (e) {
+                        console.error('Error extracting first array from malformed response:', e);
+                    }
+                }
+            }
+
+            // Kiểm tra phản hồi có phải mảng không
+            if (!brandData || !Array.isArray(brandData)) {
+                console.warn('Invalid filtered brands response format:', response.data);
+                return []; // Trả về mảng rỗng thay vì ném lỗi
+            }
+
+            // Tạo bản sao của mỗi thương hiệu
+            return brandData.map(brand => ({ ...brand } as BrandResponseDTO));
         } catch (error) {
             console.error('Error fetching filtered brands:', error);
-            throw error;
+            return []; // Trả về mảng rỗng thay vì ném lỗi
         }
     },
 
@@ -100,11 +275,50 @@ const BrandCategoryService = {
      */
     async getAllActiveParentCategories(): Promise<CategoryResponseDTO[]> {
         try {
-            const response = await api.get<CategoryResponseDTO[]>('/public/categories-and-brands/categories');
-            return response.data;
+            const response = await api.get<CategoryResponseDTO[] | string | unknown>('/public/categories-and-brands/categories');
+
+            // Fix potential malformed response format
+            let categoryData = response.data;
+
+            // Check if the response is a string that looks like concatenated arrays
+            if (typeof categoryData === 'string') {
+                try {
+                    // Extract just the first array
+                    const match = categoryData.match(/^\[(.*?)\]/);
+                    if (match) {
+                        categoryData = JSON.parse(match[0]);
+                    }
+                } catch (e) {
+                    console.error('Error parsing string response:', e);
+                }
+            }
+
+            // Check if response has a specific malformed pattern
+            if (typeof categoryData === 'object' && !Array.isArray(categoryData)) {
+                const str = JSON.stringify(categoryData);
+                if (str.includes('][')) {
+                    // This is likely two arrays concatenated
+                    try {
+                        const firstArrayEnd = str.indexOf(']') + 1;
+                        const firstArrayStr = str.substring(0, firstArrayEnd);
+                        categoryData = JSON.parse(firstArrayStr);
+                    } catch (e) {
+                        console.error('Error extracting first array from malformed response:', e);
+                    }
+                }
+            }
+
+            // Kiểm tra phản hồi có phải mảng không
+            if (!categoryData || !Array.isArray(categoryData)) {
+                console.warn('Invalid categories response format:', response.data);
+                return []; // Trả về mảng rỗng thay vì ném lỗi
+            }
+
+            // Tạo bản sao của mỗi danh mục
+            return categoryData.map(category => ({ ...category } as CategoryResponseDTO));
         } catch (error) {
             console.error('Error fetching active parent categories:', error);
-            throw error;
+            return []; // Trả về mảng rỗng thay vì ném lỗi
         }
     },
 
@@ -117,16 +331,31 @@ const BrandCategoryService = {
             console.log(`Fetching category with subcategories for ID: ${categoryId}`);
             const response = await api.get<CategoryApiResponseDTO>(`/public/categories-and-brands/categories/${categoryId}`);
 
+            // Xử lý trường hợp response.data là null hoặc undefined
+            if (!response.data) {
+                console.warn(`No data returned for category ${categoryId}`);
+                return {
+                    category: null,
+                    subcategories: []
+                };
+            }
+
             // Map the backend response format to our frontend expected format
             const result: CategoryHierarchyDTO = {
                 category: response.data.category || response.data.parent || null,
-                subcategories: response.data.subcategories || response.data.subCategories || []
+                subcategories: Array.isArray(response.data.subcategories)
+                    ? response.data.subcategories
+                    : Array.isArray(response.data.subCategories)
+                        ? response.data.subCategories
+                        : []
             };
 
             // Perform deep copy of data to avoid "object is not extensible" errors
             return {
                 category: result.category ? { ...result.category } : null,
-                subcategories: result.subcategories.map(sub => ({ ...sub }))
+                subcategories: Array.isArray(result.subcategories)
+                    ? result.subcategories.map(sub => ({ ...sub }))
+                    : []
             };
         } catch (error) {
             console.error(`Error fetching category with subcategories ${categoryId}:`, error);
@@ -139,7 +368,6 @@ const BrandCategoryService = {
         }
     },
 
-
     /**
      * Get category by slug
      */
@@ -149,14 +377,33 @@ const BrandCategoryService = {
 
             // Validate category data
             if (!response.data) {
-                throw new Error(`Category with slug ${slug} not found`);
+                console.warn(`Category with slug ${slug} not found`);
+                // Trả về một đối tượng danh mục mặc định
+                return {
+                    categoryId: 0,
+                    name: 'Unknown Category',
+                    slug: slug,
+                    parentId: null,
+                    status: true,
+                    level: 0,
+                    description: ''
+                };
             }
 
             // Return a copy to ensure object is extensible
             return { ...response.data };
         } catch (error) {
             console.error(`Error fetching category by slug ${slug}:`, error);
-            throw error;
+            // Trả về một đối tượng danh mục mặc định thay vì ném lỗi
+            return {
+                categoryId: 0,
+                name: 'Unknown Category',
+                slug: slug,
+                parentId: null,
+                status: true,
+                level: 0,
+                description: ''
+            };
         }
     },
 
@@ -165,13 +412,52 @@ const BrandCategoryService = {
      */
     async getActiveSubCategories(parentId: number): Promise<CategoryResponseDTO[]> {
         try {
-            const response = await api.get<CategoryResponseDTO[]>(`/public/categories-and-brands/categories/${parentId}/subcategories`);
+            const response = await api.get<CategoryResponseDTO[] | string | unknown>(
+                `/public/categories-and-brands/categories/${parentId}/subcategories`
+            );
+
+            // Fix potential malformed response format
+            let categoryData = response.data;
+
+            // Check if the response is a string that looks like concatenated arrays
+            if (typeof categoryData === 'string') {
+                try {
+                    // Extract just the first array
+                    const match = categoryData.match(/^\[(.*?)\]/);
+                    if (match) {
+                        categoryData = JSON.parse(match[0]);
+                    }
+                } catch (e) {
+                    console.error('Error parsing string response:', e);
+                }
+            }
+
+            // Check if response has a specific malformed pattern
+            if (typeof categoryData === 'object' && !Array.isArray(categoryData)) {
+                const str = JSON.stringify(categoryData);
+                if (str.includes('][')) {
+                    // This is likely two arrays concatenated
+                    try {
+                        const firstArrayEnd = str.indexOf(']') + 1;
+                        const firstArrayStr = str.substring(0, firstArrayEnd);
+                        categoryData = JSON.parse(firstArrayStr);
+                    } catch (e) {
+                        console.error('Error extracting first array from malformed response:', e);
+                    }
+                }
+            }
+
+            // Kiểm tra phản hồi có phải mảng không
+            if (!categoryData || !Array.isArray(categoryData)) {
+                console.warn(`Invalid subcategories response for parent ${parentId}:`, response.data);
+                return []; // Trả về mảng rỗng thay vì ném lỗi
+            }
 
             // Return copies of each subcategory to ensure they are extensible
-            return response.data.map(category => ({ ...category }));
+            return categoryData.map(category => ({ ...category } as CategoryResponseDTO));
         } catch (error) {
             console.error(`Error fetching subcategories for parent ${parentId}:`, error);
-            throw error;
+            return []; // Trả về mảng rỗng thay vì ném lỗi
         }
     },
 
@@ -184,14 +470,33 @@ const BrandCategoryService = {
 
             // Validate category data
             if (!response.data) {
-                throw new Error(`Subcategory with ID ${categoryId} not found`);
+                console.warn(`Subcategory with ID ${categoryId} not found`);
+                // Trả về một đối tượng danh mục mặc định
+                return {
+                    categoryId: categoryId,
+                    name: 'Unknown Subcategory',
+                    slug: `unknown-subcategory-${categoryId}`,
+                    parentId: null,
+                    status: true,
+                    level: 1,
+                    description: ''
+                };
             }
 
             // Return a copy to ensure object is extensible
             return { ...response.data };
         } catch (error) {
             console.error(`Error fetching subcategory ${categoryId}:`, error);
-            throw error;
+            // Trả về một đối tượng danh mục mặc định thay vì ném lỗi
+            return {
+                categoryId: categoryId,
+                name: 'Unknown Subcategory',
+                slug: `unknown-subcategory-${categoryId}`,
+                parentId: null,
+                status: true,
+                level: 1,
+                description: ''
+            };
         }
     },
 
@@ -202,7 +507,7 @@ const BrandCategoryService = {
         const { status, level, parentId, search } = params;
 
         try {
-            const response = await api.get<CategoryResponseDTO[]>('/public/categories-and-brands/categories', {
+            const response = await api.get<CategoryResponseDTO[] | string | unknown>('/public/categories-and-brands/categories', {
                 params: {
                     status,
                     level,
@@ -211,11 +516,48 @@ const BrandCategoryService = {
                 }
             });
 
+            // Fix potential malformed response format
+            let categoryData = response.data;
+
+            // Check if the response is a string that looks like concatenated arrays
+            if (typeof categoryData === 'string') {
+                try {
+                    // Extract just the first array
+                    const match = categoryData.match(/^\[(.*?)\]/);
+                    if (match) {
+                        categoryData = JSON.parse(match[0]);
+                    }
+                } catch (e) {
+                    console.error('Error parsing string response:', e);
+                }
+            }
+
+            // Check if response has a specific malformed pattern
+            if (typeof categoryData === 'object' && !Array.isArray(categoryData)) {
+                const str = JSON.stringify(categoryData);
+                if (str.includes('][')) {
+                    // This is likely two arrays concatenated
+                    try {
+                        const firstArrayEnd = str.indexOf(']') + 1;
+                        const firstArrayStr = str.substring(0, firstArrayEnd);
+                        categoryData = JSON.parse(firstArrayStr);
+                    } catch (e) {
+                        console.error('Error extracting first array from malformed response:', e);
+                    }
+                }
+            }
+
+            // Kiểm tra phản hồi có phải mảng không
+            if (!categoryData || !Array.isArray(categoryData)) {
+                console.warn('Invalid filtered categories response format:', response.data);
+                return []; // Trả về mảng rỗng thay vì ném lỗi
+            }
+
             // Return copies of each category to ensure they are extensible
-            return response.data.map(category => ({ ...category }));
+            return categoryData.map(category => ({ ...category } as CategoryResponseDTO));
         } catch (error) {
             console.error('Error fetching filtered categories:', error);
-            throw error;
+            return []; // Trả về mảng rỗng thay vì ném lỗi
         }
     },
 
@@ -238,7 +580,16 @@ const BrandCategoryService = {
             return [{ ...parent }, { ...category }];
         } catch (error) {
             console.error(`Error building breadcrumb for category ${categoryId}:`, error);
-            throw error;
+            // Trả về breadcrumb tối thiểu thay vì ném lỗi
+            return [{
+                categoryId: categoryId,
+                name: 'Unknown Category',
+                slug: `unknown-category-${categoryId}`,
+                parentId: null,
+                status: true,
+                level: 0,
+                description: ''
+            }];
         }
     }
 };

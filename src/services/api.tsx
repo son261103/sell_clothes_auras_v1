@@ -1,10 +1,10 @@
-import axios, {AxiosInstance, InternalAxiosRequestConfig, AxiosError} from 'axios';
+import axios, {AxiosInstance, InternalAxiosRequestConfig, AxiosError, AxiosResponse} from 'axios';
 import {toast} from 'react-hot-toast';
 import {store} from '../redux/store';
 import {loginSuccess, logout} from '../redux/slices/authSlice';
 import {UserStatus, ApiResponse} from '../types/auth.types';
 import {jwtDecode} from 'jwt-decode';
-import AuthService from './auth.service.tsx'; // Import AuthService
+import AuthService from './auth.service.tsx';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -128,6 +128,134 @@ const detectUserStatus = (error: AxiosError<ApiResponse>): UserStatus | null => 
     }
 
     return null;
+};
+
+// Cải thiện việc xử lý JSON lỗi
+const fixMalformedJson = (data: string): unknown => {
+    if (!data || typeof data !== 'string') {
+        return data;
+    }
+
+    // Trường hợp 1: Chuỗi JSON không hợp lệ do nối nhiều đối tượng
+    if (data.includes('}{')) {
+        try {
+            // Tìm vị trí kết thúc của đối tượng JSON đầu tiên
+            let depth = 0;
+            let firstObjEnd = -1;
+
+            for (let i = 0; i < data.length; i++) {
+                const char = data[i];
+                if (char === '{') depth++;
+                else if (char === '}') {
+                    depth--;
+                    if (depth === 0) {
+                        firstObjEnd = i + 1;
+                        break;
+                    }
+                }
+            }
+
+            if (firstObjEnd > 0) {
+                const firstPart = data.substring(0, firstObjEnd);
+                return JSON.parse(firstPart);
+            }
+        } catch (e) {
+            console.error('Lỗi khi cố gắng sửa đối tượng JSON bị nối:', e);
+        }
+    }
+
+    // Trường hợp 2: Chuỗi JSON không hợp lệ do nối nhiều mảng
+    if (data.includes('][')) {
+        try {
+            // Tìm vị trí kết thúc của mảng JSON đầu tiên
+            let depth = 0;
+            let firstArrEnd = -1;
+
+            for (let i = 0; i < data.length; i++) {
+                const char = data[i];
+                if (char === '[') depth++;
+                else if (char === ']') {
+                    depth--;
+                    if (depth === 0) {
+                        firstArrEnd = i + 1;
+                        break;
+                    }
+                }
+            }
+
+            if (firstArrEnd > 0) {
+                const firstPart = data.substring(0, firstArrEnd);
+                return JSON.parse(firstPart);
+            }
+        } catch (e) {
+            console.error('Lỗi khi cố gắng sửa mảng JSON bị nối:', e);
+        }
+    }
+
+    // Trường hợp 3: Có khoảng trắng hoặc ký tự không hợp lệ ở đầu/cuối
+    try {
+        const trimmedData = data.trim();
+        // Tìm đối tượng JSON hợp lệ đầu tiên
+        const startObj = trimmedData.indexOf('{');
+        const startArr = trimmedData.indexOf('[');
+
+        let start = -1;
+        if (startObj >= 0 && (startArr < 0 || startObj < startArr)) {
+            start = startObj;
+        } else if (startArr >= 0) {
+            start = startArr;
+        }
+
+        if (start >= 0) {
+            const potentialJson = trimmedData.substring(start);
+            return JSON.parse(potentialJson);
+        }
+    } catch (e) {
+        console.error('Lỗi khi cố gắng sửa JSON có ký tự không hợp lệ:', e);
+    }
+
+    // Trường hợp 4: Xử lý trường hợp đặc biệt - JSON có dấu phẩy cuối cùng không hợp lệ
+    try {
+        // Tìm vị trí lỗi từ thông báo lỗi
+        const result = JSON.parse(data);
+        return result;
+    } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        const positionMatch = errorMessage.match(/position (\d+)/);
+
+        if (positionMatch && positionMatch[1]) {
+            const errorPos = parseInt(positionMatch[1]);
+            try {
+                // Thử sửa lỗi tại vị trí đó
+                const before = data.substring(0, errorPos);
+                const after = data.substring(errorPos + 1);
+                const fixedJson = before + after;
+                return JSON.parse(fixedJson);
+            } catch (innerError) {
+                console.error('Không thể sửa JSON tại vị trí lỗi:', innerError);
+            }
+
+            try {
+                // Thử cắt chuỗi tại vị trí lỗi
+                const truncated = data.substring(0, errorPos) + '}';
+                return JSON.parse(truncated);
+            } catch (truncateError) {
+                console.error('Không thể cắt bớt JSON tại vị trí lỗi:', truncateError);
+            }
+        }
+    }
+
+    // Trường hợp 5: Gỡ bỏ các ký tự không hợp lệ và thử lại
+    try {
+        // Loại bỏ các ký tự không phải UTF-8 hợp lệ
+        const cleaned = data.replace(/[^\x20-\x7E]/g, '');
+        return JSON.parse(cleaned);
+    } catch (e) {
+        console.error('Không thể sửa JSON sau khi loại bỏ ký tự không hợp lệ:', e);
+    }
+
+    // Nếu tất cả đều thất bại, trả về dữ liệu ban đầu
+    return data;
 };
 
 const handleTokenRefresh = async (error: AxiosError<ApiResponse>, apiInstance: AxiosInstance) => {
@@ -295,6 +423,52 @@ const handleTokenRefresh = async (error: AxiosError<ApiResponse>, apiInstance: A
     return Promise.reject(error);
 };
 
+// Xử lý response để sửa lỗi JSON
+const responseHandler = (response: AxiosResponse): AxiosResponse => {
+    // Chỉ xử lý nếu response.data tồn tại và là chuỗi
+    if (response.data && typeof response.data === 'string') {
+        try {
+            // Nếu chuỗi có dấu hiệu là JSON không hợp lệ
+            if (
+                response.data.includes('}{') ||
+                response.data.includes('][') ||
+                response.data.includes('undefined') ||
+                (response.data.startsWith('{') && !response.data.endsWith('}')) ||
+                (response.data.startsWith('[') && !response.data.endsWith(']'))
+            ) {
+                console.warn('Phát hiện phản hồi JSON bị lỗi, đang cố gắng sửa');
+                const fixedData = fixMalformedJson(response.data);
+
+                // Chỉ cập nhật nếu dữ liệu đã được sửa thành công
+                if (fixedData !== response.data) {
+                    console.log('Đã sửa thành công phản hồi JSON');
+                    response.data = fixedData;
+                }
+            } else {
+                // Thử parse dữ liệu nếu nó có vẻ là JSON hợp lệ
+                if (
+                    (response.data.startsWith('{') && response.data.endsWith('}')) ||
+                    (response.data.startsWith('[') && response.data.endsWith(']'))
+                ) {
+                    try {
+                        response.data = JSON.parse(response.data);
+                    } catch {
+                        console.warn('Không thể parse JSON mặc dù có vẻ hợp lệ, thử sửa lỗi');
+                        const fixedData = fixMalformedJson(response.data);
+                        if (fixedData !== response.data) {
+                            response.data = fixedData;
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Không thể sửa phản hồi JSON bị lỗi:', e);
+        }
+    }
+
+    return response;
+};
+
 // Apply interceptors
 authApi.interceptors.request.use(async (config) => {
     const token = localStorage.getItem('accessToken');
@@ -342,9 +516,14 @@ authApi.interceptors.request.use(async (config) => {
 }, (error) => Promise.reject(error));
 
 publicApi.interceptors.request.use(async (config) => {
+    // Đối với các route public, chỉ thêm token nếu có, không cần refresh
+    if (config.url?.includes('/public/')) {
+        return addAuthToken(config);
+    }
+
+    // Xử lý giống như authApi cho các route không phải public
     const token = localStorage.getItem('accessToken');
 
-    // If token exists but is about to expire, refresh it proactively (same as above)
     if (token && isTokenExpired(token) && !config.url?.includes('/auth/refresh-token')) {
         try {
             console.log('Token about to expire, refreshing proactively');
@@ -381,15 +560,35 @@ publicApi.interceptors.request.use(async (config) => {
     return addAuthToken(config);
 }, (error) => Promise.reject(error));
 
-authApi.interceptors.response.use(
-    (response) => response,
-    (error) => handleTokenRefresh(error, authApi)
-);
+// Response interceptors cho cả hai instance
+authApi.interceptors.response.use(responseHandler, (error) => handleTokenRefresh(error, authApi));
 
-publicApi.interceptors.response.use(
-    (response) => response,
-    (error) => handleTokenRefresh(error, publicApi)
-);
+publicApi.interceptors.response.use(responseHandler, (error) => {
+    // Đối với các route public, không cần xử lý refresh token
+    if (error.config?.url?.includes('/public/')) {
+        console.log('Lỗi route public - bỏ qua logic refresh token');
+
+        // Đối với lỗi 401 ở route public, chỉ log và trả về dữ liệu trống
+        if (error.response?.status === 401) {
+            console.log('Route public lỗi 401 unauthorized - trả về dữ liệu trống');
+
+            // Trả về một Promise đã resolve với dữ liệu trống để tránh crash
+            return Promise.resolve({
+                data: Array.isArray(error.config?.data) ? [] : {
+                    content: [],
+                    totalElements: 0,
+                    totalPages: 0,
+                    empty: true
+                }
+            });
+        }
+
+        return Promise.reject(error);
+    }
+
+    // Đối với các route khác, xử lý bình thường
+    return handleTokenRefresh(error, publicApi);
+});
 
 // Add event listener for synchronizing logout across tabs
 window.addEventListener('storage', (event) => {

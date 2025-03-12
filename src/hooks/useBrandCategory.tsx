@@ -46,8 +46,8 @@ import {
     selectFilteredSubCategories,
     selectCategoriesWithSubcategories
 } from '../redux/selectors/brandCategorySelectors';
-import { BrandFilterParams } from '../types/brand.types';
-import { CategoryFilterParams, CategoryHierarchyDTO } from '../types/category.types';
+import { BrandFilterParams, BrandResponseDTO } from '../types/brand.types';
+import { CategoryFilterParams, CategoryHierarchyDTO, CategoryResponseDTO } from '../types/category.types';
 
 const useBrandCategory = () => {
     const dispatch = useDispatch<AppDispatch>();
@@ -102,6 +102,31 @@ const useBrandCategory = () => {
         inProgress: false
     });
 
+    // Hàm tạo thương hiệu mặc định
+    const createDefaultBrand = useCallback((brandId: number, slug: string = ''): BrandResponseDTO => {
+        return {
+            brandId: brandId,
+            name: `Unknown Brand ${brandId}`,
+            slug: slug || `unknown-brand-${brandId}`,
+            status: true,
+            description: '',
+            logo: ''
+        };
+    }, []);
+
+    // Hàm tạo danh mục mặc định
+    const createDefaultCategory = useCallback((categoryId: number, slug: string = ''): CategoryResponseDTO => {
+        return {
+            categoryId: categoryId,
+            name: `Unknown Category ${categoryId}`,
+            slug: slug || `unknown-category-${categoryId}`,
+            status: true,
+            level: 0,
+            description: '',
+            parentId: null
+        };
+    }, []);
+
     /**
      * Get all active brands
      */
@@ -129,6 +154,15 @@ const useBrandCategory = () => {
         try {
             console.log('Fetching active brands');
             const response = await BrandCategoryService.getActiveBrands();
+
+            // Kiểm tra phản hồi trước khi sử dụng
+            if (!Array.isArray(response)) {
+                console.warn('Invalid active brands response, returning empty array');
+                lastBrandRequestRef.current.inProgress = false;
+                dispatch(fetchBrandsSuccess([]));
+                return [];
+            }
+
             // Đảm bảo tạo bản sao của các đối tượng để tránh lỗi "object is not extensible"
             const copiedResponse = response.map(brand => ({ ...brand }));
             dispatch(fetchBrandsSuccess(copiedResponse));
@@ -139,7 +173,9 @@ const useBrandCategory = () => {
             const errorMessage = error instanceof Error ? error.message : 'Failed to fetch brands';
             console.error('Brand fetch error:', error);
             dispatch(fetchFailure(errorMessage));
-            throw error;
+
+            // Trả về mảng rỗng thay vì throw error
+            return [];
         }
     }, [activeBrands, dispatch]);
 
@@ -170,6 +206,15 @@ const useBrandCategory = () => {
         try {
             console.log('Fetching all brands');
             const response = await BrandCategoryService.getFilteredBrands({});
+
+            // Kiểm tra phản hồi trước khi sử dụng
+            if (!Array.isArray(response)) {
+                console.warn('Invalid brands response, returning empty array');
+                lastBrandRequestRef.current.inProgress = false;
+                dispatch(fetchBrandsSuccess([]));
+                return [];
+            }
+
             // Đảm bảo tạo bản sao của các đối tượng để tránh lỗi "object is not extensible"
             const copiedResponse = response.map(brand => ({ ...brand }));
             dispatch(fetchBrandsSuccess(copiedResponse));
@@ -180,7 +225,9 @@ const useBrandCategory = () => {
             const errorMessage = error instanceof Error ? error.message : 'Failed to fetch all brands';
             console.error('Brand fetch error:', error);
             dispatch(fetchFailure(errorMessage));
-            throw error;
+
+            // Trả về mảng rỗng thay vì throw error
+            return [];
         }
     }, [brands, dispatch]);
 
@@ -196,6 +243,15 @@ const useBrandCategory = () => {
         dispatch(fetchStart());
         try {
             const brand = await BrandCategoryService.getBrandById(brandId);
+
+            // Kiểm tra phản hồi
+            if (!brand || typeof brand !== 'object') {
+                console.warn(`Invalid brand response for ID ${brandId}`);
+                const defaultBrand = createDefaultBrand(brandId);
+                dispatch(fetchBrandDetailSuccess(defaultBrand));
+                return defaultBrand;
+            }
+
             const copiedBrand = { ...brand }; // Tạo bản sao
             dispatch(fetchBrandDetailSuccess(copiedBrand));
             return copiedBrand;
@@ -203,9 +259,13 @@ const useBrandCategory = () => {
             const errorMessage = error instanceof Error ? error.message : `Failed to fetch brand ${brandId}`;
             console.error(`Brand ${brandId} fetch error:`, error);
             dispatch(fetchFailure(errorMessage));
-            throw error;
+
+            // Trả về thương hiệu mặc định thay vì throw error
+            const defaultBrand = createDefaultBrand(brandId);
+            dispatch(fetchBrandDetailSuccess(defaultBrand));
+            return defaultBrand;
         }
-    }, [dispatch, selectedBrand]);
+    }, [dispatch, selectedBrand, createDefaultBrand]);
 
     /**
      * Get brand by slug
@@ -255,6 +315,15 @@ const useBrandCategory = () => {
             // Tìm kiếm thương hiệu theo tên/slug
             const searchResult = await BrandCategoryService.searchBrands(slug);
 
+            // Kiểm tra phản hồi
+            if (!Array.isArray(searchResult)) {
+                console.warn(`Invalid search results for brand slug ${slug}`);
+                lastSlugRequestRef.current.inProgress = false;
+                const defaultBrand = createDefaultBrand(0, slug);
+                dispatch(fetchBrandDetailSuccess(defaultBrand));
+                return defaultBrand;
+            }
+
             // Tìm kết quả chính xác theo slug
             const exactMatch = searchResult.find(b => b.slug === slug);
 
@@ -265,17 +334,23 @@ const useBrandCategory = () => {
                 return copiedBrand;
             }
 
-            // Nếu không tìm thấy kết quả chính xác, trả về lỗi
+            // Nếu không tìm thấy kết quả chính xác, trả về thương hiệu mặc định
             lastSlugRequestRef.current.inProgress = false;
-            throw new Error(`Brand with slug ${slug} not found`);
+            const defaultBrand = createDefaultBrand(0, slug);
+            dispatch(fetchBrandDetailSuccess(defaultBrand));
+            return defaultBrand;
         } catch (error) {
             lastSlugRequestRef.current.inProgress = false;
             const errorMessage = error instanceof Error ? error.message : `Failed to fetch brand by slug ${slug}`;
             console.error(`Brand slug ${slug} fetch error:`, error);
             dispatch(fetchFailure(errorMessage));
-            throw error;
+
+            // Trả về thương hiệu mặc định thay vì throw error
+            const defaultBrand = createDefaultBrand(0, slug);
+            dispatch(fetchBrandDetailSuccess(defaultBrand));
+            return defaultBrand;
         }
-    }, [dispatch, selectedBrand]);
+    }, [dispatch, selectedBrand, createDefaultBrand]);
 
     /**
      * Search brands
@@ -291,13 +366,22 @@ const useBrandCategory = () => {
         dispatch(fetchStart());
         try {
             const response = await BrandCategoryService.searchBrands(keyword);
+
+            // Kiểm tra phản hồi
+            if (!Array.isArray(response)) {
+                console.warn(`Invalid search results for brand keyword ${keyword}`);
+                return [];
+            }
+
             // Trả về bản sao của các đối tượng
             return response.map(brand => ({ ...brand }));
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to search brands';
             console.error('Brand search error:', error);
             dispatch(fetchFailure(errorMessage));
-            throw error;
+
+            // Trả về mảng rỗng thay vì throw error
+            return [];
         }
     }, [activeBrands, getActiveBrands, dispatch]);
 
@@ -329,6 +413,15 @@ const useBrandCategory = () => {
         try {
             console.log('Fetching active parent categories');
             const response = await BrandCategoryService.getAllActiveParentCategories();
+
+            // Kiểm tra phản hồi
+            if (!Array.isArray(response)) {
+                console.warn('Invalid parent categories response');
+                lastCategoryRequestRef.current.inProgress = false;
+                dispatch(fetchParentCategoriesSuccess([]));
+                return [];
+            }
+
             // Tạo bản sao của các đối tượng
             const copiedResponse = response.map(category => ({ ...category }));
             dispatch(fetchParentCategoriesSuccess(copiedResponse));
@@ -339,7 +432,9 @@ const useBrandCategory = () => {
             const errorMessage = error instanceof Error ? error.message : 'Failed to fetch parent categories';
             console.error('Category fetch error:', error);
             dispatch(fetchFailure(errorMessage));
-            throw error;
+
+            // Trả về mảng rỗng thay vì throw error
+            return [];
         }
     }, [activeParentCategories, dispatch]);
 
@@ -353,7 +448,8 @@ const useBrandCategory = () => {
             // Tạo bản sao sâu để tránh lỗi "object is not extensible"
             return {
                 category: categoryHierarchy.category ? { ...categoryHierarchy.category } : null,
-                subcategories: categoryHierarchy.subcategories.map(sub => ({ ...sub }))
+                subcategories: Array.isArray(categoryHierarchy.subcategories) ?
+                    categoryHierarchy.subcategories.map(sub => ({ ...sub })) : []
             };
         }
 
@@ -362,10 +458,22 @@ const useBrandCategory = () => {
             console.log(`Fetching category with subcategories for ID: ${categoryId}`);
             const response = await BrandCategoryService.getCategoryWithSubcategories(categoryId);
 
+            // Kiểm tra phản hồi
+            if (!response || typeof response !== 'object') {
+                console.warn(`Invalid category hierarchy response for ID ${categoryId}`);
+                const emptyHierarchy: CategoryHierarchyDTO = {
+                    category: null,
+                    subcategories: []
+                };
+                dispatch(fetchCategoryHierarchySuccess(emptyHierarchy));
+                return emptyHierarchy;
+            }
+
             // Đảm bảo response đã là bản sao sâu
             const copiedResponse: CategoryHierarchyDTO = {
                 category: response.category ? { ...response.category } : null,
-                subcategories: response.subcategories.map(sub => ({ ...sub }))
+                subcategories: Array.isArray(response.subcategories) ?
+                    response.subcategories.map(sub => ({ ...sub })) : []
             };
 
             dispatch(fetchCategoryHierarchySuccess(copiedResponse));
@@ -391,6 +499,7 @@ const useBrandCategory = () => {
                 dispatch(fetchFailure(errorMessage));
             }
 
+            dispatch(fetchCategoryHierarchySuccess(emptyResponse));
             return emptyResponse;
         }
     }, [categoryHierarchy, dispatch]);
@@ -441,17 +550,33 @@ const useBrandCategory = () => {
         dispatch(fetchStart());
         try {
             const category = await BrandCategoryService.getCategoryBySlug(slug);
+
+            // Kiểm tra phản hồi
+            if (!category || typeof category !== 'object') {
+                console.warn(`Invalid category response for slug ${slug}`);
+                lastSlugRequestRef.current.inProgress = false;
+                const defaultCategory = createDefaultCategory(0, slug);
+                dispatch(fetchCategoryDetailSuccess(defaultCategory));
+                return defaultCategory;
+            }
+
             // Tạo bản sao
             const copiedCategory = { ...category };
             dispatch(fetchCategoryDetailSuccess(copiedCategory));
 
             // Nếu là danh mục cha, lấy thêm danh mục con
             if (copiedCategory.level === 0) {
-                await getCategoryWithSubcategories(copiedCategory.categoryId);
+                await getCategoryWithSubcategories(copiedCategory.categoryId).catch(() => {
+                    // Xử lý lỗi ở đây nếu không lấy được danh mục con
+                    console.warn(`Failed to fetch subcategories for ${copiedCategory.categoryId}`);
+                });
             }
 
             // Lấy breadcrumb
-            await getCategoryBreadcrumb(copiedCategory.categoryId);
+            await getCategoryBreadcrumb(copiedCategory.categoryId).catch(() => {
+                // Xử lý lỗi ở đây nếu không lấy được breadcrumb
+                console.warn(`Failed to fetch breadcrumb for ${copiedCategory.categoryId}`);
+            });
 
             lastSlugRequestRef.current.inProgress = false;
             return copiedCategory;
@@ -460,9 +585,13 @@ const useBrandCategory = () => {
             const errorMessage = error instanceof Error ? error.message : `Failed to fetch category by slug ${slug}`;
             console.error(`Category slug ${slug} fetch error:`, error);
             dispatch(fetchFailure(errorMessage));
-            throw error;
+
+            // Trả về danh mục mặc định thay vì throw error
+            const defaultCategory = createDefaultCategory(0, slug);
+            dispatch(fetchCategoryDetailSuccess(defaultCategory));
+            return defaultCategory;
         }
-    }, [dispatch, selectedCategory, getCategoryWithSubcategories]);
+    }, [dispatch, selectedCategory, getCategoryWithSubcategories, createDefaultCategory]);
 
     /**
      * Get subcategories by parent ID
@@ -478,6 +607,14 @@ const useBrandCategory = () => {
         dispatch(fetchStart());
         try {
             const response = await BrandCategoryService.getActiveSubCategories(parentId);
+
+            // Kiểm tra phản hồi
+            if (!Array.isArray(response)) {
+                console.warn(`Invalid subcategories response for parent ID ${parentId}`);
+                dispatch(fetchSubCategoriesSuccess([]));
+                return [];
+            }
+
             // Tạo bản sao
             const copiedResponse = response.map(category => ({ ...category }));
             dispatch(fetchSubCategoriesSuccess(copiedResponse));
@@ -486,7 +623,9 @@ const useBrandCategory = () => {
             const errorMessage = error instanceof Error ? error.message : `Failed to fetch subcategories for parent ${parentId}`;
             console.error(`Subcategories for parent ${parentId} fetch error:`, error);
             dispatch(fetchFailure(errorMessage));
-            throw error;
+
+            // Trả về mảng rỗng thay vì throw error
+            return [];
         }
     }, [subCategories, dispatch]);
 
@@ -503,6 +642,13 @@ const useBrandCategory = () => {
 
         try {
             const response = await BrandCategoryService.getCategoryBreadcrumb(categoryId);
+
+            // Kiểm tra phản hồi
+            if (!Array.isArray(response)) {
+                console.warn(`Invalid breadcrumb response for category ID ${categoryId}`);
+                return [];
+            }
+
             // Tạo bản sao
             const copiedResponse = response.map(category => ({ ...category }));
             dispatch(fetchCategoryBreadcrumbSuccess(copiedResponse));
@@ -534,30 +680,62 @@ const useBrandCategory = () => {
                 };
             }
 
-            // Lấy cả danh mục và thương hiệu trong song song
-            const [categories, brands] = await Promise.all([
-                needCategories ? BrandCategoryService.getAllActiveParentCategories() : activeParentCategories,
-                needBrands ? BrandCategoryService.getActiveBrands() : activeBrands
-            ]);
+            try {
+                // Lấy cả danh mục và thương hiệu song song
+                const [categoriesResponse, brandsResponse] = await Promise.all([
+                    needCategories ? BrandCategoryService.getAllActiveParentCategories() : activeParentCategories,
+                    needBrands ? BrandCategoryService.getActiveBrands() : activeBrands
+                ]);
 
-            // Tạo bản sao
-            const copiedCategories = categories.map(category => ({ ...category }));
-            const copiedBrands = brands.map(brand => ({ ...brand }));
+                // Kiểm tra phản hồi danh mục
+                const categories = Array.isArray(categoriesResponse) ? categoriesResponse : [];
 
-            if (needCategories) {
-                dispatch(fetchParentCategoriesSuccess(copiedCategories));
+                // Kiểm tra phản hồi thương hiệu
+                const brands = Array.isArray(brandsResponse) ? brandsResponse : [];
+
+                // Log kết quả
+                console.log(`Loaded initial data: ${categories.length} categories, ${brands.length} brands`);
+
+                // Tạo bản sao
+                const copiedCategories = categories.map(category => ({ ...category }));
+                const copiedBrands = brands.map(brand => ({ ...brand }));
+
+                if (needCategories) {
+                    dispatch(fetchParentCategoriesSuccess(copiedCategories));
+                }
+
+                if (needBrands) {
+                    dispatch(fetchBrandsSuccess(copiedBrands));
+                }
+
+                return { categories: copiedCategories, brands: copiedBrands };
+            } catch (innerError) {
+                console.error('Error during data fetch:', innerError);
+
+                // Trả về dữ liệu mặc định khi có lỗi
+                const emptyCategories: CategoryResponseDTO[] = [];
+                const emptyBrands: BrandResponseDTO[] = [];
+
+                if (needCategories) {
+                    dispatch(fetchParentCategoriesSuccess(emptyCategories));
+                }
+
+                if (needBrands) {
+                    dispatch(fetchBrandsSuccess(emptyBrands));
+                }
+
+                return { categories: emptyCategories, brands: emptyBrands };
             }
-
-            if (needBrands) {
-                dispatch(fetchBrandsSuccess(copiedBrands));
-            }
-
-            return { categories: copiedCategories, brands: copiedBrands };
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to load initial data';
             console.error('Initial data load error:', error);
             dispatch(fetchFailure(errorMessage));
-            throw error;
+
+            // Trả về dữ liệu rỗng thay vì throw error
+            return {
+                categories: [],
+                brands: []
+            };
         }
     }, [activeParentCategories, activeBrands, dispatch]);
 

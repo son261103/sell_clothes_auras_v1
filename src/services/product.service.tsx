@@ -13,6 +13,9 @@ import {
     VariantAvailabilityResponse
 } from '../types/product.types';
 
+// Define a type for request parameters to avoid 'any'
+type RequestParams = Record<string, string | number | boolean | null | undefined>;
+
 const ProductService = {
     /**
      * Get paginated list of products with optional filters
@@ -26,18 +29,18 @@ const ProductService = {
             search,
             categoryId,
             brandId,
-            minPrice,
-            maxPrice,
             // Thêm hỗ trợ cho mảng danh mục và thương hiệu
             categoryIds,
-            brandIds
+            brandIds,
+            minPrice,
+            maxPrice
         } = params;
 
         try {
             console.log('API Request - getProducts:', { params });
 
             // Xây dựng parameters cho request
-            const requestParams: any = {
+            const requestParams: RequestParams = {
                 page,
                 size,
                 sortBy,
@@ -70,23 +73,51 @@ const ProductService = {
                 params: requestParams
             });
 
-            // Check the response data
-            if (!response.data.content) {
-                console.error('Invalid API response structure:', response.data);
-                throw new Error('API response is missing content array');
+            // Check for malformed data - in some cases we might get concatenated JSON
+            let validResponse: PageResponse<ProductResponseDTO>;
+            try {
+                // If already valid JSON object, use as is
+                if (response.data && typeof response.data === 'object') {
+                    validResponse = response.data;
+                }
+                // If it's a string (possibly malformed), try to fix and parse
+                else if (typeof response.data === 'string') {
+                    console.warn('Received string response instead of JSON object, attempting to parse');
+                    const responseStr: string = response.data;
+                    const cleanData = responseStr.replace(/}{/g, '},{');
+                    validResponse = JSON.parse(`[${cleanData}]`)[0] as PageResponse<ProductResponseDTO>;
+                } else {
+                    throw new Error('Invalid response format');
+                }
+            } catch (parseError) {
+                console.error('Error parsing response:', parseError, response.data);
+                // Return empty page structure instead of throwing
+                return createEmptyPageResponse(page, size);
+            }
+
+            // Check the response data for content array
+            if (!validResponse.content) {
+                console.error('Invalid API response structure:', validResponse);
+                return createEmptyPageResponse(page, size);
+            }
+
+            // Ensure content is an array
+            if (!Array.isArray(validResponse.content)) {
+                console.error('API response content is not an array:', validResponse.content);
+                validResponse.content = [];
             }
 
             // Validate category and brand data in products
-            if (response.data.content.length > 0) {
-                const missingCategory = response.data.content.filter(p => !p.category).length;
-                const missingBrand = response.data.content.filter(p => !p.brand).length;
+            if (validResponse.content.length > 0) {
+                const missingCategory = validResponse.content.filter((p: ProductResponseDTO) => !p.category).length;
+                const missingBrand = validResponse.content.filter((p: ProductResponseDTO) => !p.brand).length;
 
                 if (missingCategory > 0 || missingBrand > 0) {
                     console.warn(`Found ${missingCategory} products missing category and ${missingBrand} missing brand`);
 
                     // If we find missing data, try to supplement it with default values
                     // to prevent UI errors - this is a temporary solution until the API is fixed
-                    response.data.content = response.data.content.map(product => {
+                    validResponse.content = validResponse.content.map((product: ProductResponseDTO) => {
                         return {
                             ...product,
                             category: product.category || {
@@ -107,11 +138,12 @@ const ProductService = {
                 }
             }
 
-            console.log(`Received ${response.data.content.length} products from API`);
-            return response.data;
+            console.log(`Received ${validResponse.content.length} products from API`);
+            return validResponse;
         } catch (error) {
             console.error('Error fetching products:', error);
-            throw error;
+            // Return empty page response structure instead of throwing
+            return createEmptyPageResponse(page, size);
         }
     },
 
@@ -124,7 +156,8 @@ const ProductService = {
 
             // Validate product data
             if (!response.data) {
-                throw new Error(`Product with ID ${productId} not found`);
+                console.warn(`Product with ID ${productId} not found`);
+                return createEmptyProduct(productId);
             }
 
             // Check for missing category or brand data
@@ -153,7 +186,8 @@ const ProductService = {
             return response.data;
         } catch (error) {
             console.error(`Error fetching product ${productId}:`, error);
-            throw error;
+            // Return empty product instead of throwing
+            return createEmptyProduct(productId);
         }
     },
 
@@ -166,7 +200,8 @@ const ProductService = {
 
             // Validate product data
             if (!response.data) {
-                throw new Error(`Product with slug ${slug} not found`);
+                console.warn(`Product with slug ${slug} not found`);
+                return createEmptyProduct(0, slug);
             }
 
             // Check for missing category or brand data
@@ -195,7 +230,8 @@ const ProductService = {
             return response.data;
         } catch (error) {
             console.error(`Error fetching product by slug ${slug}:`, error);
-            throw error;
+            // Return empty product instead of throwing
+            return createEmptyProduct(0, slug);
         }
     },
 
@@ -211,8 +247,14 @@ const ProductService = {
                 }
             });
 
+            // Validate response data
+            if (!response.data || !Array.isArray(response.data)) {
+                console.warn('Invalid response format for getProductsByCategories');
+                return [];
+            }
+
             // Validate and fix any products with missing data
-            const products = response.data.map(product => {
+            const products = response.data.map((product: ProductResponseDTO) => {
                 return {
                     ...product,
                     category: product.category || {
@@ -234,7 +276,8 @@ const ProductService = {
             return products;
         } catch (error) {
             console.error(`Error fetching products by categories:`, error);
-            throw error;
+            // Return empty array instead of throwing
+            return [];
         }
     },
 
@@ -245,8 +288,14 @@ const ProductService = {
         try {
             const response = await api.get<ProductResponseDTO[]>(`/public/products/category/${categoryId}`);
 
+            // Validate response data
+            if (!response.data || !Array.isArray(response.data)) {
+                console.warn(`Invalid response format for category ${categoryId}`);
+                return [];
+            }
+
             // Validate and fix any products with missing data
-            const products = response.data.map(product => {
+            const products = response.data.map((product: ProductResponseDTO) => {
                 return {
                     ...product,
                     category: product.category || {
@@ -268,7 +317,8 @@ const ProductService = {
             return products;
         } catch (error) {
             console.error(`Error fetching products by category ${categoryId}:`, error);
-            throw error;
+            // Return empty array instead of throwing
+            return [];
         }
     },
 
@@ -284,8 +334,14 @@ const ProductService = {
                 }
             });
 
+            // Validate response data
+            if (!response.data || !Array.isArray(response.data)) {
+                console.warn('Invalid response format for getProductsByBrands');
+                return [];
+            }
+
             // Validate and fix any products with missing data
-            const products = response.data.map(product => {
+            const products = response.data.map((product: ProductResponseDTO) => {
                 return {
                     ...product,
                     category: product.category || {
@@ -307,7 +363,8 @@ const ProductService = {
             return products;
         } catch (error) {
             console.error(`Error fetching products by brands:`, error);
-            throw error;
+            // Return empty array instead of throwing
+            return [];
         }
     },
 
@@ -318,8 +375,14 @@ const ProductService = {
         try {
             const response = await api.get<ProductResponseDTO[]>(`/public/products/brand/${brandId}`);
 
+            // Validate response data
+            if (!response.data || !Array.isArray(response.data)) {
+                console.warn(`Invalid response format for brand ${brandId}`);
+                return [];
+            }
+
             // Validate and fix any products with missing data
-            const products = response.data.map(product => {
+            const products = response.data.map((product: ProductResponseDTO) => {
                 return {
                     ...product,
                     category: product.category || {
@@ -341,7 +404,8 @@ const ProductService = {
             return products;
         } catch (error) {
             console.error(`Error fetching products by brand ${brandId}:`, error);
-            throw error;
+            // Return empty array instead of throwing
+            return [];
         }
     },
 
@@ -355,8 +419,14 @@ const ProductService = {
                 params: { limit }
             });
 
+            // Validate response data
+            if (!response.data || !Array.isArray(response.data)) {
+                console.warn('Invalid response format for featured products');
+                return [];
+            }
+
             // Validate and fix any products with missing data
-            const products = response.data.map(product => {
+            const products = response.data.map((product: ProductResponseDTO) => {
                 return {
                     ...product,
                     category: product.category || {
@@ -378,7 +448,8 @@ const ProductService = {
             return products;
         } catch (error) {
             console.error('Error fetching featured products:', error);
-            throw error;
+            // Return empty array instead of throwing
+            return [];
         }
     },
 
@@ -392,32 +463,44 @@ const ProductService = {
                 params: { page, size, limit }
             });
 
-            // Check and fix content if needed
-            if (response.data.content) {
-                response.data.content = response.data.content.map(product => {
-                    return {
-                        ...product,
-                        category: product.category || {
-                            categoryId: 0,
-                            name: 'Unknown Category',
-                            slug: 'unknown-category',
-                            status: true,
-                            level: 0
-                        },
-                        brand: product.brand || {
-                            brandId: 0,
-                            name: 'Unknown Brand',
-                            slug: 'unknown-brand',
-                            status: true
-                        }
-                    };
-                });
+            // Validate response data
+            if (!response.data || !response.data.content) {
+                console.warn('Invalid response format for latest products');
+                return createEmptyPageResponse(page, size);
             }
+
+            // Ensure content is an array
+            if (!Array.isArray(response.data.content)) {
+                console.warn('Latest products content is not an array');
+                response.data.content = [];
+                return response.data;
+            }
+
+            // Check and fix content if needed
+            response.data.content = response.data.content.map((product: ProductResponseDTO) => {
+                return {
+                    ...product,
+                    category: product.category || {
+                        categoryId: 0,
+                        name: 'Unknown Category',
+                        slug: 'unknown-category',
+                        status: true,
+                        level: 0
+                    },
+                    brand: product.brand || {
+                        brandId: 0,
+                        name: 'Unknown Brand',
+                        slug: 'unknown-brand',
+                        status: true
+                    }
+                };
+            });
 
             return response.data;
         } catch (error) {
             console.error('Error fetching latest products:', error);
-            throw error;
+            // Return empty page response instead of throwing
+            return createEmptyPageResponse(page, size);
         }
     },
 
@@ -430,32 +513,44 @@ const ProductService = {
                 params: { page, size, sortBy, sortDir }
             });
 
-            // Check and fix content if needed
-            if (response.data.content) {
-                response.data.content = response.data.content.map(product => {
-                    return {
-                        ...product,
-                        category: product.category || {
-                            categoryId: 0,
-                            name: 'Unknown Category',
-                            slug: 'unknown-category',
-                            status: true,
-                            level: 0
-                        },
-                        brand: product.brand || {
-                            brandId: 0,
-                            name: 'Unknown Brand',
-                            slug: 'unknown-brand',
-                            status: true
-                        }
-                    };
-                });
+            // Validate response data
+            if (!response.data || !response.data.content) {
+                console.warn('Invalid response format for products on sale');
+                return createEmptyPageResponse(page, size);
             }
+
+            // Ensure content is an array
+            if (!Array.isArray(response.data.content)) {
+                console.warn('Products on sale content is not an array');
+                response.data.content = [];
+                return response.data;
+            }
+
+            // Check and fix content if needed
+            response.data.content = response.data.content.map((product: ProductResponseDTO) => {
+                return {
+                    ...product,
+                    category: product.category || {
+                        categoryId: 0,
+                        name: 'Unknown Category',
+                        slug: 'unknown-category',
+                        status: true,
+                        level: 0
+                    },
+                    brand: product.brand || {
+                        brandId: 0,
+                        name: 'Unknown Brand',
+                        slug: 'unknown-brand',
+                        status: true
+                    }
+                };
+            });
 
             return response.data;
         } catch (error) {
             console.error('Error fetching products on sale:', error);
-            throw error;
+            // Return empty page response instead of throwing
+            return createEmptyPageResponse(page, size);
         }
     },
 
@@ -469,8 +564,14 @@ const ProductService = {
                 params: { limit }
             });
 
+            // Validate response data
+            if (!response.data || !Array.isArray(response.data)) {
+                console.warn(`Invalid response format for related products of ${productId}`);
+                return [];
+            }
+
             // Validate and fix any products with missing data
-            const products = response.data.map(product => {
+            const products = response.data.map((product: ProductResponseDTO) => {
                 return {
                     ...product,
                     category: product.category || {
@@ -492,7 +593,8 @@ const ProductService = {
             return products;
         } catch (error) {
             console.error(`Error fetching related products for ${productId}:`, error);
-            throw error;
+            // Return empty array instead of throwing
+            return [];
         }
     },
 
@@ -517,7 +619,7 @@ const ProductService = {
 
         try {
             // Xây dựng tham số query
-            const queryParams: any = {
+            const queryParams: RequestParams = {
                 keyword,
                 minPrice,
                 maxPrice,
@@ -544,32 +646,44 @@ const ProductService = {
                 params: queryParams
             });
 
-            // Check and fix content if needed
-            if (response.data.content) {
-                response.data.content = response.data.content.map(product => {
-                    return {
-                        ...product,
-                        category: product.category || {
-                            categoryId: categoryId || 0,
-                            name: 'Unknown Category',
-                            slug: 'unknown-category',
-                            status: true,
-                            level: 0
-                        },
-                        brand: product.brand || {
-                            brandId: brandId || 0,
-                            name: 'Unknown Brand',
-                            slug: 'unknown-brand',
-                            status: true
-                        }
-                    };
-                });
+            // Validate response data
+            if (!response.data || !response.data.content) {
+                console.warn('Invalid response format for search products');
+                return createEmptyPageResponse(page, size);
             }
+
+            // Ensure content is an array
+            if (!Array.isArray(response.data.content)) {
+                console.warn('Search products content is not an array');
+                response.data.content = [];
+                return response.data;
+            }
+
+            // Check and fix content if needed
+            response.data.content = response.data.content.map((product: ProductResponseDTO) => {
+                return {
+                    ...product,
+                    category: product.category || {
+                        categoryId: categoryId || 0,
+                        name: 'Unknown Category',
+                        slug: 'unknown-category',
+                        status: true,
+                        level: 0
+                    },
+                    brand: product.brand || {
+                        brandId: brandId || 0,
+                        name: 'Unknown Brand',
+                        slug: 'unknown-brand',
+                        status: true
+                    }
+                };
+            });
 
             return response.data;
         } catch (error) {
             console.error('Error searching products:', error);
-            throw error;
+            // Return empty page response instead of throwing
+            return createEmptyPageResponse(page, size);
         }
     },
 
@@ -594,7 +708,7 @@ const ProductService = {
 
         try {
             // Xây dựng tham số query
-            const queryParams: any = {
+            const queryParams: RequestParams = {
                 page,
                 size,
                 sortBy,
@@ -623,32 +737,44 @@ const ProductService = {
                 params: queryParams
             });
 
-            // Check and fix content if needed
-            if (response.data.content) {
-                response.data.content = response.data.content.map(product => {
-                    return {
-                        ...product,
-                        category: product.category || {
-                            categoryId: categoryId || 0,
-                            name: 'Unknown Category',
-                            slug: 'unknown-category',
-                            status: true,
-                            level: 0
-                        },
-                        brand: product.brand || {
-                            brandId: brandId || 0,
-                            name: 'Unknown Brand',
-                            slug: 'unknown-brand',
-                            status: true
-                        }
-                    };
-                });
+            // Validate response data
+            if (!response.data || !response.data.content) {
+                console.warn('Invalid response format for filtered products');
+                return createEmptyPageResponse(page, size);
             }
+
+            // Ensure content is an array
+            if (!Array.isArray(response.data.content)) {
+                console.warn('Filtered products content is not an array');
+                response.data.content = [];
+                return response.data;
+            }
+
+            // Check and fix content if needed
+            response.data.content = response.data.content.map((product: ProductResponseDTO) => {
+                return {
+                    ...product,
+                    category: product.category || {
+                        categoryId: categoryId || 0,
+                        name: 'Unknown Category',
+                        slug: 'unknown-category',
+                        status: true,
+                        level: 0
+                    },
+                    brand: product.brand || {
+                        brandId: brandId || 0,
+                        name: 'Unknown Brand',
+                        slug: 'unknown-brand',
+                        status: true
+                    }
+                };
+            });
 
             return response.data;
         } catch (error) {
             console.error('Error fetching filtered products:', error);
-            throw error;
+            // Return empty page response instead of throwing
+            return createEmptyPageResponse(page, size);
         }
     },
 
@@ -660,6 +786,13 @@ const ProductService = {
     async getProductImages(productId: number): Promise<ProductImageResponseDTO[]> {
         try {
             const response = await api.get<ProductImageResponseDTO[]>(`/public/products/${productId}/images`);
+
+            // Validate response data
+            if (!response.data || !Array.isArray(response.data)) {
+                console.warn(`Invalid response format for product images of ${productId}`);
+                return [];
+            }
+
             return response.data;
         } catch (error) {
             console.error(`Error fetching images for product ${productId}:`, error);
@@ -675,17 +808,18 @@ const ProductService = {
     async getPrimaryImage(productId: number): Promise<ProductImageResponseDTO> {
         try {
             const response = await api.get<ProductImageResponseDTO>(`/public/products/${productId}/images/primary`);
+
+            // Validate response data
+            if (!response.data) {
+                console.warn(`Invalid response format for primary image of ${productId}`);
+                return createDefaultImage(productId);
+            }
+
             return response.data;
         } catch (error) {
             console.error(`Error fetching primary image for product ${productId}:`, error);
             // Return a default image object as fallback
-            return {
-                imageId: 0,
-                productId: productId,
-                imageUrl: '/placeholder-image.jpg',
-                displayOrder: 1,
-                isPrimary: true
-            };
+            return createDefaultImage(productId);
         }
     },
 
@@ -697,6 +831,13 @@ const ProductService = {
     async getActiveVariants(productId: number): Promise<ProductVariantResponseDTO[]> {
         try {
             const response = await api.get<ProductVariantResponseDTO[]>(`/public/products/${productId}/variants`);
+
+            // Validate response data
+            if (!response.data || !Array.isArray(response.data)) {
+                console.warn(`Invalid response format for variants of ${productId}`);
+                return [];
+            }
+
             return response.data;
         } catch (error) {
             console.error(`Error fetching variants for product ${productId}:`, error);
@@ -712,6 +853,13 @@ const ProductService = {
     async getAvailableSizes(productId: number): Promise<string[]> {
         try {
             const response = await api.get<string[]>(`/public/products/${productId}/variants/sizes`);
+
+            // Validate response data
+            if (!response.data || !Array.isArray(response.data)) {
+                console.warn(`Invalid response format for sizes of ${productId}`);
+                return [];
+            }
+
             return response.data;
         } catch (error) {
             console.error(`Error fetching available sizes for product ${productId}:`, error);
@@ -726,6 +874,13 @@ const ProductService = {
     async getAvailableColors(productId: number): Promise<string[]> {
         try {
             const response = await api.get<string[]>(`/public/products/${productId}/variants/colors`);
+
+            // Validate response data
+            if (!response.data || !Array.isArray(response.data)) {
+                console.warn(`Invalid response format for colors of ${productId}`);
+                return [];
+            }
+
             return response.data;
         } catch (error) {
             console.error(`Error fetching available colors for product ${productId}:`, error);
@@ -740,10 +895,18 @@ const ProductService = {
     async getVariantById(variantId: number): Promise<ProductVariantResponseDTO> {
         try {
             const response = await api.get<ProductVariantResponseDTO>(`/public/products/variants/${variantId}`);
+
+            // Validate response data
+            if (!response.data) {
+                console.warn(`Invalid response format for variant ${variantId}`);
+                return createDefaultVariant(variantId);
+            }
+
             return response.data;
         } catch (error) {
             console.error(`Error fetching variant ${variantId}:`, error);
-            throw error;
+            // Return default variant instead of throwing
+            return createDefaultVariant(variantId);
         }
     },
 
@@ -753,10 +916,18 @@ const ProductService = {
     async getVariantBySku(sku: string): Promise<ProductVariantResponseDTO> {
         try {
             const response = await api.get<ProductVariantResponseDTO>(`/public/products/variants/sku/${sku}`);
+
+            // Validate response data
+            if (!response.data) {
+                console.warn(`Invalid response format for variant with SKU ${sku}`);
+                return createDefaultVariant(0, sku);
+            }
+
             return response.data;
         } catch (error) {
             console.error(`Error fetching variant with SKU ${sku}:`, error);
-            throw error;
+            // Return default variant instead of throwing
+            return createDefaultVariant(0, sku);
         }
     },
 
@@ -769,6 +940,13 @@ const ProductService = {
             const response = await api.get<VariantAvailabilityResponse>(`/public/products/${productId}/check-availability`, {
                 params: { size, color }
             });
+
+            // Validate response data
+            if (!response.data) {
+                console.warn(`Invalid response format for availability check of product ${productId}`);
+                return { available: false };
+            }
+
             return response.data;
         } catch (error) {
             console.error(`Error checking variant availability for product ${productId}:`, error);
@@ -777,5 +955,82 @@ const ProductService = {
         }
     }
 };
+
+// Helper functions to create default/empty response objects
+function createEmptyPageResponse(page: number, size: number): PageResponse<ProductResponseDTO> {
+    return {
+        content: [],
+        totalElements: 0,
+        totalPages: 0,
+        size: size,
+        number: page,
+        pageable: {
+            pageNumber: page,
+            pageSize: size,
+            sort: { sorted: true, unsorted: false, empty: false },
+            offset: page * size,
+            paged: true,
+            unpaged: false
+        },
+        sort: { sorted: true, unsorted: false, empty: false },
+        numberOfElements: 0,
+        first: true,
+        last: true,
+        empty: true
+    };
+}
+
+function createEmptyProduct(productId: number, slug?: string): ProductResponseDTO {
+    return {
+        productId: productId,
+        name: slug ? `Product ${slug}` : `Product ${productId}`,
+        description: '',
+        price: 0,
+        salePrice: null,
+        thumbnail: '/placeholder-image.jpg',
+        slug: slug || `product-${productId}`,
+        status: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        category: {
+            categoryId: 0,
+            name: 'Unknown Category',
+            slug: 'unknown-category',
+            status: true,
+            level: 0
+        },
+        brand: {
+            brandId: 0,
+            name: 'Unknown Brand',
+            slug: 'unknown-brand',
+            status: true
+        }
+    };
+}
+
+function createDefaultImage(productId: number): ProductImageResponseDTO {
+    return {
+        imageId: 0,
+        productId: productId,
+        imageUrl: '/placeholder-image.jpg',
+        displayOrder: 1,
+        isPrimary: true
+    };
+}
+
+function createDefaultVariant(variantId: number, sku?: string): ProductVariantResponseDTO {
+    return {
+        variantId: variantId,
+        productId: 0,
+        sku: sku || `SKU-${variantId}`,
+        size: 'One Size',
+        color: 'Default',
+        stockQuantity: 0,  // Đã sửa thành stockQuantity thay vì stock
+        imageUrl: null,
+        status: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+    };
+}
 
 export default ProductService;
