@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams, useLocation, Link } from 'react-router-dom';
 import usePayment from '../../hooks/usePayment';
 import usePaymentMethod from '../../hooks/usePaymentMethod';
 import useAuth from '../../hooks/useAuth';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { toast } from 'react-hot-toast';
 import { motion } from 'framer-motion';
-import { FiChevronLeft, FiCreditCard, FiInfo, FiAlertCircle, FiTruck, FiDollarSign, FiChevronDown, FiChevronUp } from 'react-icons/fi';
+import { FiCreditCard, FiInfo, FiAlertCircle, FiTruck, FiDollarSign, FiChevronDown, FiChevronUp, FiChevronRight, FiArrowLeft } from 'react-icons/fi';
+import AOS from 'aos';
+import 'aos/dist/aos.css';
 
 const PaymentPage: React.FC = () => {
     const { orderId } = useParams<{ orderId: string }>();
@@ -26,6 +28,18 @@ const PaymentPage: React.FC = () => {
     const isVnpayMethod = selectedPaymentMethod?.code === 'VNPAY';
     const isBankTransferMethod = selectedPaymentMethod?.code === 'BANK_TRANSFER';
 
+    // Initialize AOS animation library
+    useEffect(() => {
+        AOS.init({
+            duration: 800,
+            once: false,
+            mirror: true,
+            easing: 'ease-out-cubic',
+            delay: 50
+        });
+        return () => AOS.refresh();
+    }, []);
+
     useEffect(() => {
         if (!isAuthenticated) {
             navigate('/login');
@@ -33,7 +47,9 @@ const PaymentPage: React.FC = () => {
         }
 
         if (!state || !state.orderId || !state.totalAmount || !state.paymentMethodId) {
-            toast.error('Thông tin đơn hàng không hợp lệ');
+            toast.error('Thông tin đơn hàng không hợp lệ', {
+                icon: <FiAlertCircle className="text-red-500" />,
+            });
             navigate('/cart');
             return;
         }
@@ -48,7 +64,9 @@ const PaymentPage: React.FC = () => {
                 await getActivePaymentMethods();
             } catch (error) {
                 console.error('Error fetching payment methods:', error);
-                toast.error('Không thể tải danh sách phương thức thanh toán');
+                toast.error('Không thể tải danh sách phương thức thanh toán', {
+                    icon: <FiAlertCircle className="text-red-500" />,
+                });
             }
         };
         if (!paymentMethods.length && !paymentMethodLoading) {
@@ -59,19 +77,21 @@ const PaymentPage: React.FC = () => {
     const getPaymentMethodIcon = (code: string) => {
         switch (code) {
             case 'VNPAY':
-                return <FiDollarSign className="w-6 h-6 text-primary" />;
+                return <FiDollarSign className="w-6 h-6 text-primary dark:text-accent" />;
             case 'COD':
-                return <FiTruck className="w-6 h-6 text-primary" />;
+                return <FiTruck className="w-6 h-6 text-primary dark:text-accent" />;
             case 'BANK_TRANSFER':
-                return <FiCreditCard className="w-6 h-6 text-primary" />;
+                return <FiCreditCard className="w-6 h-6 text-primary dark:text-accent" />;
             default:
-                return <FiCreditCard className="w-6 h-6 text-primary" />;
+                return <FiCreditCard className="w-6 h-6 text-primary dark:text-accent" />;
         }
     };
 
     const handlePayment = async () => {
         if (!orderId || !selectedPaymentMethodId) {
-            toast.error('Thông tin thanh toán không đầy đủ');
+            toast.error('Thông tin thanh toán không đầy đủ', {
+                icon: <FiAlertCircle className="text-red-500" />,
+            });
             return;
         }
 
@@ -99,7 +119,9 @@ const PaymentPage: React.FC = () => {
                 }
 
                 // Xử lý riêng cho COD
-                toast.success('Đã xác nhận đơn hàng với phương thức COD!');
+                toast.success('Đã xác nhận đơn hàng với phương thức COD!', {
+                    icon: <FiTruck className="text-green-500" />,
+                });
                 navigate('/payment/result', {
                     state: {
                         orderId: parseInt(orderId),
@@ -122,7 +144,9 @@ const PaymentPage: React.FC = () => {
                 });
             } else {
                 // Xử lý các phương thức thanh toán khác
-                toast.success('Thanh toán thành công!');
+                toast.success('Thanh toán thành công!', {
+                    icon: <FiCreditCard className="text-green-500" />,
+                });
                 navigate('/order-success', {
                     state: {
                         orderId: parseInt(orderId),
@@ -132,7 +156,9 @@ const PaymentPage: React.FC = () => {
             }
         } catch (error) {
             console.error('Error processing payment:', error);
-            toast.error('Thanh toán thất bại. Vui lòng thử lại sau.');
+            toast.error('Thanh toán thất bại. Vui lòng thử lại sau.', {
+                icon: <FiAlertCircle className="text-red-500" />,
+            });
         } finally {
             setIsProcessing(false);
         }
@@ -144,7 +170,7 @@ const PaymentPage: React.FC = () => {
         switch (selectedPaymentMethod.code) {
             case 'COD':
                 return (
-                    <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800" data-aos="fade-up" data-aos-delay="300">
                         <div className="flex items-start">
                             <FiInfo className="w-5 h-5 text-blue-500 mt-0.5 mr-2 flex-shrink-0" />
                             <div>
@@ -155,7 +181,7 @@ const PaymentPage: React.FC = () => {
                                 <div className="mt-2">
                                     <button
                                         onClick={() => setShowCodInfo(!showCodInfo)}
-                                        className="text-sm text-primary font-medium hover:underline inline-flex items-center"
+                                        className="text-sm text-primary dark:text-accent font-medium hover:underline inline-flex items-center"
                                     >
                                         <span>{showCodInfo ? "Ẩn thông tin chi tiết" : "Xem thêm thông tin"}</span>
                                         {showCodInfo ?
@@ -175,10 +201,10 @@ const PaymentPage: React.FC = () => {
 
                                     <button
                                         onClick={() => navigate('/payment/cod-info')}
-                                        className="text-sm text-primary font-medium hover:underline mt-2 inline-flex items-center ml-4"
+                                        className="text-sm text-primary dark:text-accent font-medium hover:underline mt-2 inline-flex items-center ml-4"
                                     >
                                         <span>Xem chi tiết quy trình COD</span>
-                                        <FiChevronLeft className="transform rotate-180 ml-1" />
+                                        <FiChevronRight className="ml-1" />
                                     </button>
                                 </div>
                             </div>
@@ -187,7 +213,7 @@ const PaymentPage: React.FC = () => {
                 );
             case 'VNPAY':
                 return (
-                    <div className="mt-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                    <div className="mt-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800" data-aos="fade-up" data-aos-delay="300">
                         <div className="flex items-start">
                             <FiInfo className="w-5 h-5 text-green-500 mt-0.5 mr-2 flex-shrink-0" />
                             <div>
@@ -202,7 +228,7 @@ const PaymentPage: React.FC = () => {
                 );
             case 'BANK_TRANSFER':
                 return (
-                    <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                    <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800" data-aos="fade-up" data-aos-delay="300">
                         <div className="flex items-start">
                             <FiInfo className="w-5 h-5 text-yellow-500 mt-0.5 mr-2 flex-shrink-0" />
                             <div>
@@ -222,118 +248,192 @@ const PaymentPage: React.FC = () => {
 
     if (paymentLoading || paymentMethodLoading || !state) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-lightBackground dark:bg-darkBackground">
-                <motion.div
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ duration: 0.5 }}
-                >
-                    <LoadingSpinner size="large" />
-                </motion.div>
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+                <LoadingSpinner size="large" />
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-lightBackground dark:bg-darkBackground py-12">
-            <div className="max-w-4xl mx-auto px-4 sm:px-8">
-                <motion.div
-                    initial={{ opacity: 0, y: -20 }}
+        <div className="min-h-screen">
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
+                {/* Breadcrumb */}
+                <motion.nav
+                    initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.6 }}
-                    className="flex items-center justify-between mb-8"
+                    transition={{ duration: 0.5 }}
+                    className="flex items-center text-sm mb-8 text-gray-600 dark:text-gray-300 overflow-x-auto whitespace-nowrap bg-white dark:bg-gray-800 px-4 py-3 rounded-xl shadow-sm"
+                    data-aos="fade-down"
                 >
-                    <div className="flex items-center space-x-2">
-                        <div className="bg-primary/10 p-2 rounded-full">
-                            <FiCreditCard className="w-8 h-8 text-primary" />
-                        </div>
-                        <h1 className="text-3xl font-bold text-primary tracking-tight">Thanh Toán Đơn Hàng</h1>
-                    </div>
-                    <button
-                        onClick={() => navigate('/cart')}
-                        className="flex items-center bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 px-4 py-2 rounded-full shadow-sm text-primary border border-primary/20 transition-colors duration-200"
-                    >
-                        <FiChevronLeft className="mr-1" /> Quay lại giỏ hàng
-                    </button>
-                </motion.div>
+                    <Link to="/" className="hover:text-primary dark:hover:text-accent transition-colors">
+                        Trang chủ
+                    </Link>
+                    <FiChevronRight className="mx-2 w-4 h-4 flex-shrink-0" />
 
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.6 }}
-                    className="bg-white dark:bg-gray-800 rounded-lg border border-primary/10 dark:border-primary/20 p-6 shadow-sm"
+                    <Link to="/cart" className="hover:text-primary dark:hover:text-accent transition-colors">
+                        Giỏ hàng
+                    </Link>
+                    <FiChevronRight className="mx-2 w-4 h-4 flex-shrink-0" />
+
+                    <span className="text-gray-900 dark:text-white font-medium">
+                        Thanh toán
+                    </span>
+                </motion.nav>
+
+                {/* Back Button for Mobile */}
+                <motion.button
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.5 }}
+                    onClick={() => navigate('/cart')}
+                    className="md:hidden flex items-center text-primary dark:text-accent mb-6 hover:underline transition-colors"
+                    data-aos="fade-right"
                 >
-                    <h2 className="text-xl font-bold text-textDark dark:text-textLight mb-4">Thông tin thanh toán</h2>
-                    <div className="space-y-4">
-                        <div className="flex justify-between text-sm">
-                            <span className="text-secondary/70 dark:text-textLight/70">Mã đơn hàng:</span>
-                            <span className="text-textDark dark:text-textLight">{orderId}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                            <span className="text-secondary/70 dark:text-textLight/70">Tổng tiền:</span>
-                            <span className="text-textDark dark:text-textLight">
-                                {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalAmount)}
-                            </span>
-                        </div>
-                        <div>
-                            <h3 className="text-lg font-semibold text-textDark dark:text-textLight mb-2">Phương thức thanh toán</h3>
-                            {selectedPaymentMethod ? (
-                                <div className="p-4 bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded-lg">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            {getPaymentMethodIcon(selectedPaymentMethod.code)}
-                                            <div>
-                                                <p className="font-medium text-textDark dark:text-textLight">{selectedPaymentMethod.name}</p>
-                                                <p className="text-sm text-secondary/70 dark:text-textLight/70">{selectedPaymentMethod.code}</p>
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => navigate(`/order`, { state: { redirectBack: true } })}
-                                            className="text-primary hover:underline"
-                                        >
-                                            Thay đổi
-                                        </button>
+                    <FiArrowLeft className="mr-2 w-5 h-5" /> Quay lại giỏ hàng
+                </motion.button>
+
+                <div className="flex flex-col md:flex-row gap-8">
+                    {/* Main payment info */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.6 }}
+                        className="flex-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700"
+                        data-aos="fade-up"
+                    >
+                        <div className="p-6 md:p-8">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="bg-primary/10 dark:bg-accent/20 p-2 rounded-full">
+                                    <FiCreditCard className="w-7 h-7 text-primary dark:text-accent" />
+                                </div>
+                                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Thanh Toán Đơn Hàng</h1>
+                            </div>
+
+                            <div className="space-y-6">
+                                <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg space-y-4">
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600 dark:text-gray-400">Mã đơn hàng:</span>
+                                        <span className="text-gray-900 dark:text-white font-medium">#{orderId}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-600 dark:text-gray-400">Tổng tiền:</span>
+                                        <span className="text-gray-900 dark:text-white font-medium">
+                                            {new Intl.NumberFormat('vi-VN', {
+                                                style: 'currency',
+                                                currency: 'VND',
+                                                maximumFractionDigits: 0
+                                            }).format(totalAmount)}
+                                        </span>
                                     </div>
                                 </div>
-                            ) : (
-                                <p className="text-gray-600 dark:text-gray-300">Chưa chọn phương thức thanh toán</p>
-                            )}
 
-                            {renderPaymentMethodInfo()}
+                                <div data-aos="fade-up" data-aos-delay="200">
+                                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Phương thức thanh toán</h3>
+                                    {selectedPaymentMethod ? (
+                                        <div className="p-4 bg-primary/5 dark:bg-accent/10 border border-primary/20 dark:border-accent/20 rounded-lg">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    {getPaymentMethodIcon(selectedPaymentMethod.code)}
+                                                    <div>
+                                                        <p className="font-medium text-gray-900 dark:text-white">{selectedPaymentMethod.name}</p>
+                                                        <p className="text-sm text-gray-600 dark:text-gray-400">{selectedPaymentMethod.code}</p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => navigate(`/order`, { state: { redirectBack: true } })}
+                                                    className="text-primary dark:text-accent hover:underline"
+                                                >
+                                                    Thay đổi
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <p className="text-gray-600 dark:text-gray-300">Chưa chọn phương thức thanh toán</p>
+                                    )}
+
+                                    {renderPaymentMethodInfo()}
+                                </div>
+
+                                <motion.button
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
+                                    onClick={handlePayment}
+                                    disabled={isProcessing || !selectedPaymentMethodId}
+                                    className="w-full mt-6 bg-primary hover:bg-primary/90 dark:bg-accent dark:hover:bg-accent/90 text-white py-3 rounded-lg shadow-sm disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center transition duration-200"
+                                    data-aos="fade-up"
+                                    data-aos-delay="400"
+                                >
+                                    {isProcessing ? (
+                                        <LoadingSpinner size="small" color="white" />
+                                    ) : (
+                                        <>
+                                            <span className="mr-2">
+                                                {isCodMethod ? 'Xác nhận đặt hàng' : 'Thanh toán ngay'}
+                                            </span>
+                                            {isCodMethod ? <FiTruck className="w-5 h-5" /> : <FiCreditCard className="w-5 h-5" />}
+                                        </>
+                                    )}
+                                </motion.button>
+
+                                {isVnpayMethod && (
+                                    <div className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400 flex items-center justify-center">
+                                        <FiAlertCircle className="w-4 h-4 mr-1" />
+                                        <span>Bạn sẽ được chuyển đến trang thanh toán của VNPAY</span>
+                                    </div>
+                                )}
+
+                                {isCodMethod && (
+                                    <div className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400 flex items-center justify-center">
+                                        <FiAlertCircle className="w-4 h-4 mr-1" />
+                                        <span>Đơn hàng sẽ được gửi đi khi bạn nhấn xác nhận đặt hàng</span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    </motion.div>
 
-                    <button
-                        onClick={handlePayment}
-                        disabled={isProcessing || !selectedPaymentMethodId}
-                        className="w-full mt-6 bg-primary text-white py-3 rounded-full hover:bg-primary/90 transition-all shadow-sm disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
+                    {/* Summary - Optional for larger screens */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.6, delay: 0.2 }}
+                        className="hidden md:block w-80 h-fit bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700"
+                        data-aos="fade-left"
+                        data-aos-delay="200"
                     >
-                        {isProcessing ? (
-                            <LoadingSpinner size="small" color="white" />
-                        ) : (
-                            <>
-                                <span className="mr-2">
-                                    {isCodMethod ? 'Xác nhận đặt hàng' : 'Thanh toán ngay'}
-                                </span>
-                                {isCodMethod ? <FiTruck className="w-5 h-5" /> : <FiCreditCard className="w-5 h-5" />}
-                            </>
-                        )}
-                    </button>
-
-                    {isVnpayMethod && (
-                        <div className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400 flex items-center justify-center">
-                            <FiAlertCircle className="w-4 h-4 mr-1" />
-                            <span>Bạn sẽ được chuyển đến trang thanh toán của VNPAY</span>
+                        <div className="p-6">
+                            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Tóm tắt đơn hàng</h2>
+                            <div className="space-y-3">
+                                <div className="flex justify-between">
+                                    <span className="text-gray-600 dark:text-gray-400">Tổng tiền hàng</span>
+                                    <span className="text-gray-900 dark:text-white">
+                                        {new Intl.NumberFormat('vi-VN', {
+                                            style: 'currency',
+                                            currency: 'VND',
+                                            maximumFractionDigits: 0
+                                        }).format(totalAmount)}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-600 dark:text-gray-400">Phí vận chuyển</span>
+                                    <span className="text-gray-900 dark:text-white">Miễn phí</span>
+                                </div>
+                                <div className="border-t border-gray-200 dark:border-gray-700 pt-3 mt-3">
+                                    <div className="flex justify-between font-bold">
+                                        <span className="text-gray-900 dark:text-white">Tổng thanh toán</span>
+                                        <span className="text-primary dark:text-accent">
+                                            {new Intl.NumberFormat('vi-VN', {
+                                                style: 'currency',
+                                                currency: 'VND',
+                                                maximumFractionDigits: 0
+                                            }).format(totalAmount)}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                    )}
-
-                    {isCodMethod && (
-                        <div className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400 flex items-center justify-center">
-                            <FiAlertCircle className="w-4 h-4 mr-1" />
-                            <span>Đơn hàng sẽ được gửi đi khi bạn nhấn xác nhận đặt hàng</span>
-                        </div>
-                    )}
-                </motion.div>
+                    </motion.div>
+                </div>
             </div>
         </div>
     );

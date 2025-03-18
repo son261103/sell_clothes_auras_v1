@@ -1,18 +1,22 @@
 // src/pages/order/OrderListPage.tsx
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import useOrder from '../../hooks/useOrder';
 import useAuth from '../../hooks/useAuth';
 import { OrderStatus, OrderSummaryDTO } from '../../types/order.types';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     FiPackage, FiFilter, FiChevronLeft, FiChevronRight,
-    FiSearch, FiEye, FiShoppingBag, FiRefreshCw, FiCalendar
+    FiSearch, FiEye, FiShoppingBag, FiRefreshCw, FiCalendar,
+    FiArrowLeft, FiAlertCircle
 } from 'react-icons/fi';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import EmptyState from '../../components/common/EmptyState';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
+import { toast } from 'react-hot-toast';
+import AOS from 'aos';
+import 'aos/dist/aos.css';
 
 const statusFilters = [
     { label: 'Tất cả', value: null },
@@ -34,7 +38,11 @@ const OrderCard: React.FC<{ order: OrderSummaryDTO; onViewDetails: () => void }>
     };
 
     const formatPrice = (price: number) => {
-        return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price);
+        return new Intl.NumberFormat('vi-VN', {
+            style: 'currency',
+            currency: 'VND',
+            maximumFractionDigits: 0
+        }).format(price);
     };
 
     const getStatusBadgeColor = (status: OrderStatus) => {
@@ -61,7 +69,8 @@ const OrderCard: React.FC<{ order: OrderSummaryDTO; onViewDetails: () => void }>
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm p-4 hover:shadow-md transition-all"
+            className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-4 hover:shadow-lg transition-all"
+            data-aos="fade-up"
         >
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
                 <div className="mb-2 sm:mb-0">
@@ -73,7 +82,7 @@ const OrderCard: React.FC<{ order: OrderSummaryDTO; onViewDetails: () => void }>
                         {formatDate(order.createdAt)}
                     </div>
                 </div>
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(order.status)}`}>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium ${getStatusBadgeColor(order.status)}`}>
                     {getOrderStatusText(order.status)}
                 </span>
             </div>
@@ -88,7 +97,7 @@ const OrderCard: React.FC<{ order: OrderSummaryDTO; onViewDetails: () => void }>
                     </div>
                     <div className="text-right">
                         <p className="text-gray-500 dark:text-gray-400">Tổng tiền:</p>
-                        <p className="text-primary font-semibold">{formatPrice(order.totalAmount)}</p>
+                        <p className="text-primary dark:text-accent font-semibold">{formatPrice(order.totalAmount)}</p>
                     </div>
                 </div>
             </div>
@@ -96,7 +105,7 @@ const OrderCard: React.FC<{ order: OrderSummaryDTO; onViewDetails: () => void }>
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
                 <div className="text-sm text-gray-500 dark:text-gray-400">
                     {order.paymentStatus && (
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium ${
                             order.paymentStatus === 'COMPLETED'
                                 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
                                 : order.paymentStatus === 'PENDING'
@@ -113,12 +122,12 @@ const OrderCard: React.FC<{ order: OrderSummaryDTO; onViewDetails: () => void }>
                     )}
                 </div>
                 <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
                     onClick={onViewDetails}
-                    className="px-4 py-2 bg-primary text-white rounded-lg inline-flex items-center"
+                    className="px-4 py-2 bg-primary hover:bg-primary/90 dark:bg-accent dark:hover:bg-accent/90 text-white rounded-lg inline-flex items-center transition-colors shadow-sm"
                 >
-                    <FiEye className="mr-1" /> Chi tiết
+                    <FiEye className="mr-2" /> Chi tiết
                 </motion.button>
             </div>
         </motion.div>
@@ -141,6 +150,18 @@ const OrderListPage: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [isInitialized, setIsInitialized] = useState(false);
 
+    // Initialize AOS
+    useEffect(() => {
+        AOS.init({
+            duration: 800,
+            once: false,
+            mirror: true,
+            easing: 'ease-out-cubic',
+            delay: 50
+        });
+        return () => AOS.refresh();
+    }, []);
+
     // Fetch orders on component mount and when filters change
     useEffect(() => {
         if (!isAuthenticated) {
@@ -154,6 +175,9 @@ const OrderListPage: React.FC = () => {
                 setIsInitialized(true);
             } catch (error) {
                 console.error("Error fetching orders:", error);
+                toast.error('Không thể tải danh sách đơn hàng', {
+                    icon: <FiAlertCircle className="text-red-500" />,
+                });
             }
         };
 
@@ -169,6 +193,12 @@ const OrderListPage: React.FC = () => {
     // Handle pagination
     const handlePageChange = (newPage: number) => {
         setCurrentPage(newPage);
+
+        // Scroll to top of the page with smooth animation
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
     };
 
     // Handle search (client-side filtering for now)
@@ -204,7 +234,7 @@ const OrderListPage: React.FC = () => {
                 title="Không thể tải danh sách đơn hàng"
                 description="Đã xảy ra lỗi khi tải danh sách đơn hàng. Vui lòng thử lại sau."
                 action={{ label: 'Thử lại', onClick: () => window.location.reload() }}
-                icon={<FiRefreshCw className="w-12 h-12 text-primary" />}
+                icon={<FiRefreshCw className="w-12 h-12 text-primary dark:text-accent" />}
             />
         );
     }
@@ -212,11 +242,32 @@ const OrderListPage: React.FC = () => {
     // Render empty state if no orders
     if (isInitialized && orderList.length === 0) {
         return (
-            <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
-                <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="min-h-screen">
+                <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
+                    {/* Breadcrumb */}
+                    <motion.nav
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5 }}
+                        className="flex items-center text-sm mb-8 text-gray-600 dark:text-gray-300 overflow-x-auto whitespace-nowrap bg-white dark:bg-gray-800 px-4 py-3 rounded-xl shadow-sm"
+                        data-aos="fade-down"
+                    >
+                        <Link to="/" className="hover:text-primary dark:hover:text-accent transition-colors">
+                            Trang chủ
+                        </Link>
+                        <FiChevronRight className="mx-2 w-4 h-4 flex-shrink-0" />
+
+                        <span className="text-gray-900 dark:text-white font-medium">
+                            Đơn hàng của tôi
+                        </span>
+                    </motion.nav>
+
                     <div className="flex justify-between items-center mb-6">
                         <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
-                            <FiPackage className="mr-2" /> Đơn hàng của tôi
+                            <div className="bg-primary/10 dark:bg-accent/20 p-2 rounded-full mr-3">
+                                <FiPackage className="w-6 h-6 text-primary dark:text-accent" />
+                            </div>
+                            Đơn hàng của tôi
                         </h1>
                     </div>
 
@@ -224,7 +275,7 @@ const OrderListPage: React.FC = () => {
                         title="Bạn chưa có đơn hàng nào"
                         description="Bạn chưa có đơn hàng nào. Hãy mua sắm và quay lại sau."
                         action={{ label: 'Mua sắm ngay', onClick: () => navigate('/products') }}
-                        icon={<FiShoppingBag className="w-16 h-16 text-primary" />}
+                        icon={<FiShoppingBag className="w-16 h-16 text-primary dark:text-accent" />}
                     />
                 </div>
             </div>
@@ -232,34 +283,70 @@ const OrderListPage: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen py-6">
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="min-h-screen">
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
+                {/* Breadcrumb */}
+                <motion.nav
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                    className="flex items-center text-sm mb-8 text-gray-600 dark:text-gray-300 overflow-x-auto whitespace-nowrap bg-white dark:bg-gray-800 px-4 py-3 rounded-xl shadow-sm"
+                    data-aos="fade-down"
+                >
+                    <Link to="/" className="hover:text-primary dark:hover:text-accent transition-colors">
+                        Trang chủ
+                    </Link>
+                    <FiChevronRight className="mx-2 w-4 h-4 flex-shrink-0" />
+
+                    <span className="text-gray-900 dark:text-white font-medium">
+                        Đơn hàng của tôi
+                    </span>
+                </motion.nav>
+
+                {/* Back Button for Mobile */}
+                <motion.button
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.5 }}
+                    onClick={() => navigate('/')}
+                    className="md:hidden flex items-center text-primary dark:text-accent mb-6 hover:underline transition-colors"
+                    data-aos="fade-right"
+                >
+                    <FiArrowLeft className="mr-2 w-5 h-5" /> Quay lại trang chủ
+                </motion.button>
+
                 <motion.div
                     initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5 }}
+                    data-aos="fade-up"
                 >
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
                         <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
-                            <FiPackage className="mr-2" /> Đơn hàng của tôi
+                            <div className="bg-primary/10 dark:bg-accent/20 p-2 rounded-full mr-3">
+                                <FiPackage className="w-6 h-6 text-primary dark:text-accent" />
+                            </div>
+                            Đơn hàng của tôi
                         </h1>
 
                         <div className="mt-3 sm:mt-0">
-                            <button
+                            <motion.button
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
                                 onClick={() => navigate('/products')}
-                                className="inline-flex items-center px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+                                className="inline-flex items-center px-4 py-2 bg-primary hover:bg-primary/90 dark:bg-accent dark:hover:bg-accent/90 text-white rounded-lg transition-colors shadow-sm"
                             >
-                                <FiShoppingBag className="mr-1" /> Tiếp tục mua sắm
-                            </button>
+                                <FiShoppingBag className="mr-2" /> Tiếp tục mua sắm
+                            </motion.button>
                         </div>
                     </div>
 
                     {/* Filters and Search */}
-                    <div className="mb-6 bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                    <div className="mb-6 bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg border border-gray-200 dark:border-gray-700" data-aos="fade-up" data-aos-delay="100">
                         <div className="flex flex-col md:flex-row gap-4">
                             {/* Status Filter */}
                             <div className="flex-1">
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     <FiFilter className="inline mr-1" /> Lọc theo trạng thái
                                 </label>
                                 <div className="flex flex-wrap gap-2">
@@ -267,9 +354,9 @@ const OrderListPage: React.FC = () => {
                                         <button
                                             key={filter.value || 'all'}
                                             onClick={() => handleStatusChange(filter.value)}
-                                            className={`px-3 py-1 text-sm rounded-full border transition-colors ${
+                                            className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
                                                 selectedStatus === filter.value
-                                                    ? 'bg-primary text-white border-primary'
+                                                    ? 'bg-primary dark:bg-accent text-white border-primary dark:border-accent'
                                                     : 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
                                             }`}
                                         >
@@ -281,7 +368,7 @@ const OrderListPage: React.FC = () => {
 
                             {/* Search */}
                             <div className="md:w-64">
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     <FiSearch className="inline mr-1" /> Tìm kiếm theo mã đơn hàng
                                 </label>
                                 <form onSubmit={handleSearch} className="relative">
@@ -290,7 +377,7 @@ const OrderListPage: React.FC = () => {
                                         value={searchTerm}
                                         onChange={(e) => setSearchTerm(e.target.value)}
                                         placeholder="Nhập mã đơn hàng..."
-                                        className="w-full p-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                        className="w-full p-2 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary dark:focus:ring-accent focus:border-primary dark:focus:border-accent"
                                     />
                                     <button
                                         type="submit"
@@ -304,55 +391,74 @@ const OrderListPage: React.FC = () => {
                     </div>
 
                     {/* Orders List */}
-                    <div className="space-y-4 mb-8">
+                    <div className="space-y-4 mb-8" data-aos="fade-up" data-aos-delay="150">
                         <AnimatePresence>
                             {loading && isInitialized ? (
                                 <div className="flex justify-center py-8">
                                     <LoadingSpinner size="medium" />
                                 </div>
-                            ) : (
-                                filteredOrders.map(order => (
+                            ) : filteredOrders.length > 0 ? (
+                                filteredOrders.map((order) => (
                                     <OrderCard
                                         key={order.orderId}
                                         order={order}
                                         onViewDetails={() => handleViewOrderDetails(order.orderId)}
                                     />
                                 ))
+                            ) : (
+                                <div className="bg-white dark:bg-gray-800 rounded-xl p-8 text-center border border-gray-200 dark:border-gray-700 shadow-lg">
+                                    <FiSearch className="mx-auto h-12 w-12 text-gray-400 mb-3" />
+                                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Không tìm thấy đơn hàng</h3>
+                                    <p className="text-gray-500 dark:text-gray-400 mb-4">Không có đơn hàng nào phù hợp với bộ lọc bạn đã chọn</p>
+                                    <button
+                                        onClick={() => {
+                                            setSelectedStatus(null);
+                                            setSearchTerm('');
+                                        }}
+                                        className="inline-flex items-center px-4 py-2 bg-primary hover:bg-primary/90 dark:bg-accent dark:hover:bg-accent/90 text-white rounded-lg shadow-sm"
+                                    >
+                                        <FiRefreshCw className="mr-2" /> Xóa bộ lọc
+                                    </button>
+                                </div>
                             )}
                         </AnimatePresence>
                     </div>
 
                     {/* Pagination */}
                     {pagination && pagination.totalPages > 1 && (
-                        <div className="flex items-center justify-between py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-4 rounded-lg shadow-sm">
+                        <div className="flex items-center justify-between py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-4 rounded-xl shadow-lg" data-aos="fade-up" data-aos-delay="200">
                             <div className="flex items-center space-x-2">
                                 <span className="text-sm text-gray-700 dark:text-gray-300">
                                     Trang {currentPage + 1} / {pagination.totalPages}
                                 </span>
                             </div>
-                            <div className="flex space-x-2">
-                                <button
+                            <div className="flex space-x-3">
+                                <motion.button
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
                                     onClick={() => handlePageChange(currentPage - 1)}
                                     disabled={currentPage === 0}
-                                    className={`px-3 py-2 rounded-md flex items-center ${
+                                    className={`px-3 py-2 rounded-lg flex items-center transition-colors ${
                                         currentPage === 0
                                             ? 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
                                             : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
                                     }`}
                                 >
                                     <FiChevronLeft className="mr-1" /> Trước
-                                </button>
-                                <button
+                                </motion.button>
+                                <motion.button
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
                                     onClick={() => handlePageChange(currentPage + 1)}
                                     disabled={currentPage >= pagination.totalPages - 1}
-                                    className={`px-3 py-2 rounded-md flex items-center ${
+                                    className={`px-3 py-2 rounded-lg flex items-center transition-colors ${
                                         currentPage >= pagination.totalPages - 1
                                             ? 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
                                             : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
                                     }`}
                                 >
                                     Tiếp <FiChevronRight className="ml-1" />
-                                </button>
+                                </motion.button>
                             </div>
                         </div>
                     )}

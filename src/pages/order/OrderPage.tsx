@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import useCart from '../../hooks/useCart';
 import useOrder from '../../hooks/useOrder';
 import useUserAddress from '../../hooks/useUserAddress';
@@ -14,7 +14,7 @@ import 'aos/dist/aos.css';
 import AOS from 'aos';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiChevronLeft, FiPlus, FiTruck, FiPackage, FiMap, FiMessageSquare, FiCreditCard, FiShoppingBag } from 'react-icons/fi';
+import {FiPlus, FiTruck, FiPackage, FiMap, FiMessageSquare, FiCreditCard, FiShoppingBag, FiChevronRight, FiArrowLeft, FiAlertCircle } from 'react-icons/fi';
 import { AddressResponseDTO } from '../../types/user.address.types';
 
 // Import Components
@@ -111,10 +111,12 @@ const OrderPage: React.FC = () => {
     useEffect(() => {
         AOS.init({
             duration: 800,
-            once: true,
+            once: false,
             easing: 'ease-out-cubic',
-            mirror: false
+            mirror: true,
+            delay: 50
         });
+        return () => AOS.refresh();
     }, []);
 
     // Update coupon discount when the applied coupon changes
@@ -135,7 +137,9 @@ const OrderPage: React.FC = () => {
                     setHasFetchedAddresses(true);
                 } catch (error) {
                     console.error('Error fetching addresses:', error);
-                    toast.error('Không thể tải danh sách địa chỉ');
+                    toast.error('Không thể tải danh sách địa chỉ', {
+                        icon: <FiAlertCircle className="text-red-500" />,
+                    });
                 }
             };
             fetchAddresses();
@@ -156,7 +160,9 @@ const OrderPage: React.FC = () => {
                 await getAllShippingMethods();
             } catch (error) {
                 console.error('Error fetching shipping methods:', error);
-                toast.error('Không thể tải danh sách phương thức vận chuyển');
+                toast.error('Không thể tải danh sách phương thức vận chuyển', {
+                    icon: <FiAlertCircle className="text-red-500" />,
+                });
             }
         };
         if (!shippingMethods.length && !shippingLoading) {
@@ -187,7 +193,9 @@ const OrderPage: React.FC = () => {
                 await getActivePaymentMethods();
             } catch (error) {
                 console.error('Error fetching payment methods:', error);
-                toast.error('Không thể tải danh sách phương thức thanh toán');
+                toast.error('Không thể tải danh sách phương thức thanh toán', {
+                    icon: <FiAlertCircle className="text-red-500" />,
+                });
             }
         };
         if (!paymentMethods.length && !paymentMethodLoading) {
@@ -214,7 +222,9 @@ const OrderPage: React.FC = () => {
                 await getUserCart();
             } catch (error) {
                 console.error('Error fetching cart data:', error);
-                toast.error('Không thể tải dữ liệu giỏ hàng');
+                toast.error('Không thể tải dữ liệu giỏ hàng', {
+                    icon: <FiAlertCircle className="text-red-500" />,
+                });
             } finally {
                 setIsInitialized(true);
             }
@@ -226,15 +236,21 @@ const OrderPage: React.FC = () => {
 
     const handleInitiateOrder = () => {
         if (!selectedAddressId) {
-            toast.error('Vui lòng chọn địa chỉ nhận hàng');
+            toast.error('Vui lòng chọn địa chỉ nhận hàng', {
+                icon: <FiAlertCircle className="text-red-500" />,
+            });
             return;
         }
         if (!selectedShippingMethodId) {
-            toast.error('Vui lòng chọn phương thức vận chuyển');
+            toast.error('Vui lòng chọn phương thức vận chuyển', {
+                icon: <FiAlertCircle className="text-red-500" />,
+            });
             return;
         }
         if (!selectedPaymentMethodId) {
-            toast.error('Vui lòng chọn phương thức thanh toán');
+            toast.error('Vui lòng chọn phương thức thanh toán', {
+                icon: <FiAlertCircle className="text-red-500" />,
+            });
             return;
         }
         setShowOrderConfirmModal(true);
@@ -248,12 +264,16 @@ const OrderPage: React.FC = () => {
         setShowOrderConfirmModal(false);
 
         if (!selectedAddressId || !selectedShippingMethodId || !selectedPaymentMethodId) {
-            toast.error('Vui lòng chọn đầy đủ địa chỉ, phương thức vận chuyển và thanh toán');
+            toast.error('Vui lòng chọn đầy đủ địa chỉ, phương thức vận chuyển và thanh toán', {
+                icon: <FiAlertCircle className="text-red-500" />,
+            });
             return;
         }
 
         if (totalPrice === undefined || shippingFee === undefined) {
-            toast.error('Không thể tính tổng tiền đơn hàng');
+            toast.error('Không thể tính tổng tiền đơn hàng', {
+                icon: <FiAlertCircle className="text-red-500" />,
+            });
             return;
         }
 
@@ -270,7 +290,9 @@ const OrderPage: React.FC = () => {
                 couponCode: appliedCouponCode || undefined
             };
             const createdOrder = await createOrder(orderData);
-            toast.success('Đơn hàng đã được tạo thành công!');
+            toast.success('Đơn hàng đã được tạo thành công!', {
+                icon: <FiPackage className="text-green-500" />,
+            });
             navigate(`/payment/${createdOrder.orderId}`, {
                 state: {
                     orderId: createdOrder.orderId,
@@ -280,7 +302,9 @@ const OrderPage: React.FC = () => {
             });
         } catch (error) {
             console.error('Error creating order:', error);
-            toast.error('Không thể tạo đơn hàng. Vui lòng thử lại sau.');
+            toast.error('Không thể tạo đơn hàng. Vui lòng thử lại sau.', {
+                icon: <FiAlertCircle className="text-red-500" />,
+            });
         } finally {
             setProcessingOrder(false);
         }
@@ -293,7 +317,9 @@ const OrderPage: React.FC = () => {
         if (addresses.length === 0 || address.isDefault) {
             setSelectedAddressId(address.addressId);
         }
-        toast.success(addressToEdit ? 'Cập nhật địa chỉ thành công!' : 'Thêm địa chỉ mới thành công!');
+        toast.success(addressToEdit ? 'Cập nhật địa chỉ thành công!' : 'Thêm địa chỉ mới thành công!', {
+            icon: <FiMap className="text-green-500" />,
+        });
     };
 
     const handleEditAddress = (address: AddressResponseDTO) => {
@@ -328,7 +354,9 @@ const OrderPage: React.FC = () => {
             setHasFetchedAddresses(false);
         } catch (error) {
             console.error('Error deleting address:', error);
-            toast.error('Không thể xóa địa chỉ. Vui lòng thử lại sau.');
+            toast.error('Không thể xóa địa chỉ. Vui lòng thử lại sau.', {
+                icon: <FiAlertCircle className="text-red-500" />,
+            });
         }
     };
 
@@ -339,13 +367,17 @@ const OrderPage: React.FC = () => {
             toast.success('Đã đặt địa chỉ mặc định thành công');
         } catch (error) {
             console.error('Error setting default address:', error);
-            toast.error('Không thể đặt địa chỉ mặc định. Vui lòng thử lại sau.');
+            toast.error('Không thể đặt địa chỉ mặc định. Vui lòng thử lại sau.', {
+                icon: <FiAlertCircle className="text-red-500" />,
+            });
         }
     };
 
     const handleShippingMethodSuccess = () => {
         setShowShippingModal(false);
-        toast.success('Đã cập nhật phương thức vận chuyển!');
+        toast.success('Đã cập nhật phương thức vận chuyển!', {
+            icon: <FiTruck className="text-green-500" />,
+        });
     };
 
     const handleSelectShippingMethod = (methodId: number) => {
@@ -358,21 +390,17 @@ const OrderPage: React.FC = () => {
 
     const handlePaymentMethodSuccess = () => {
         setShowPaymentMethodModal(false);
-        toast.success('Đã chọn phương thức thanh toán!');
+        toast.success('Đã chọn phương thức thanh toán!', {
+            icon: <FiCreditCard className="text-green-500" />,
+        });
     };
 
     const validCartItems = cartItems.filter(item => item && item.itemId && item.productName);
 
     if ((cartLoading || addressLoading || shippingLoading || paymentMethodLoading) && !isInitialized) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-secondary">
-                <motion.div
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ duration: 0.5 }}
-                >
-                    <LoadingSpinner size="large" />
-                </motion.div>
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+                <LoadingSpinner size="large" />
             </div>
         );
     }
@@ -380,13 +408,13 @@ const OrderPage: React.FC = () => {
     if (!isAuthenticated) {
         return (
             <motion.div
-                className="min-h-screen bg-gray-50 dark:bg-secondary py-12"
+                className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12"
                 initial="hidden"
                 animate="visible"
                 exit="exit"
                 variants={pageVariants}
             >
-                <div className="container mx-auto px-4">
+                <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
                     <motion.div variants={itemVariants}>
                         <EmptyState
                             title="Vui lòng đăng nhập"
@@ -409,13 +437,13 @@ const OrderPage: React.FC = () => {
     if (validCartItems.length === 0) {
         return (
             <motion.div
-                className="min-h-screen bg-gray-50 dark:bg-secondary py-12"
+                className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12"
                 initial="hidden"
                 animate="visible"
                 exit="exit"
                 variants={pageVariants}
             >
-                <div className="container mx-auto px-4">
+                <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
                     <motion.div variants={itemVariants}>
                         <EmptyState
                             title="Giỏ hàng trống"
@@ -430,35 +458,51 @@ const OrderPage: React.FC = () => {
     }
 
     return (
-        <motion.div
-            className="min-h-screen transition-colors duration-300"
-            variants={pageVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-        >
-            <div className="container mx-auto px-4 sm:px-8 py-6">
-                <motion.div
-                    className="bg-white dark:bg-gray-800 shadow-xl rounded-xl overflow-hidden transition-all duration-300 border border-gray-100 dark:border-gray-700"
-                    variants={itemVariants}
+        <div className="min-h-screen">
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
+                {/* Breadcrumb */}
+                <motion.nav
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                    className="flex items-center text-sm mb-8 text-gray-600 dark:text-gray-300 overflow-x-auto whitespace-nowrap bg-white dark:bg-gray-800 px-4 py-3 rounded-xl shadow-sm"
+                    data-aos="fade-down"
                 >
-                    <div className="p-4 border-b border-gray-100 dark:border-gray-700">
-                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
-                            <FiPackage className="mr-2" />
-                            Đặt Hàng
-                            <motion.button
-                                onClick={() => navigate('/cart')}
-                                className="ml-auto flex items-center text-primary text-base font-normal hover:underline"
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                            >
-                                <FiChevronLeft className="mr-1" />
-                                Quay lại giỏ hàng
-                            </motion.button>
-                        </h1>
-                    </div>
+                    <Link to="/" className="hover:text-primary dark:hover:text-accent transition-colors">
+                        Trang chủ
+                    </Link>
+                    <FiChevronRight className="mx-2 w-4 h-4 flex-shrink-0" />
 
-                    <div className="p-6">
+                    <Link to="/cart" className="hover:text-primary dark:hover:text-accent transition-colors">
+                        Giỏ hàng
+                    </Link>
+                    <FiChevronRight className="mx-2 w-4 h-4 flex-shrink-0" />
+
+                    <span className="text-gray-900 dark:text-white font-medium">
+                        Đặt hàng
+                    </span>
+                </motion.nav>
+
+                {/* Back Button for Mobile */}
+                <motion.button
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.5 }}
+                    onClick={() => navigate('/cart')}
+                    className="md:hidden flex items-center text-primary dark:text-accent mb-6 hover:underline transition-colors"
+                    data-aos="fade-right"
+                >
+                    <FiArrowLeft className="mr-2 w-5 h-5" /> Quay lại giỏ hàng
+                </motion.button>
+
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6 }}
+                    className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700"
+                    data-aos="fade-up"
+                >
+                    <div className="p-6 md:p-8">
                         <motion.div
                             variants={containerVariants}
                             className="grid grid-cols-1 lg:grid-cols-12 gap-8"
@@ -467,17 +511,19 @@ const OrderPage: React.FC = () => {
                                 {/* Địa chỉ nhận hàng */}
                                 <motion.div
                                     variants={itemVariants}
-                                    className="bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 p-6 shadow-md"
+                                    className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 shadow-sm"
+                                    data-aos="fade-up"
+                                    data-aos-delay="100"
                                 >
                                     <div className="flex justify-between items-center mb-4">
                                         <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
-                                            <div className="bg-primary/10 p-2 rounded-full mr-2">
-                                                <FiMap className="w-5 h-5 text-primary" />
+                                            <div className="bg-primary/10 dark:bg-accent/20 p-2 rounded-full mr-2">
+                                                <FiMap className="w-5 h-5 text-primary dark:text-accent" />
                                             </div>
                                             Địa chỉ nhận hàng
                                         </h2>
                                         <motion.button
-                                            className="text-primary text-sm font-medium flex items-center bg-primary/5 px-3 py-1.5 rounded-lg hover:bg-primary/10"
+                                            className="text-primary dark:text-accent text-sm font-medium flex items-center bg-primary/5 dark:bg-accent/10 px-3 py-1.5 rounded-lg hover:bg-primary/10 dark:hover:bg-accent/20 transition-colors"
                                             onClick={() => {
                                                 setAddressToEdit(undefined);
                                                 setShowAddressModal(true);
@@ -494,7 +540,7 @@ const OrderPage: React.FC = () => {
                                             initial={{ opacity: 0, y: 10 }}
                                             animate={{ opacity: 1, y: 0 }}
                                             transition={{ duration: 0.3 }}
-                                            className="p-3 bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600 rounded-lg"
+                                            className="p-3 bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-600 rounded-lg"
                                         >
                                             <EnhancedAddressCard
                                                 address={selectedAddress}
@@ -506,13 +552,13 @@ const OrderPage: React.FC = () => {
                                             />
                                         </motion.div>
                                     ) : (
-                                        <div className="text-center py-6 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                        <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
                                             <div className="mb-3">
-                                                <FiMap className="w-8 h-8 text-primary mx-auto" />
+                                                <FiMap className="w-8 h-8 text-primary dark:text-accent mx-auto" />
                                             </div>
                                             <p className="text-gray-600 dark:text-gray-300 mb-3 text-sm">Bạn chưa chọn địa chỉ nào.</p>
                                             <motion.button
-                                                className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+                                                className="px-4 py-2 bg-primary dark:bg-accent hover:bg-primary/90 dark:hover:bg-accent/90 text-white rounded-lg text-sm font-medium transition-colors"
                                                 onClick={() => setShowAddressListModal(true)}
                                                 whileHover={{ scale: 1.05 }}
                                                 whileTap={{ scale: 0.95 }}
@@ -526,17 +572,19 @@ const OrderPage: React.FC = () => {
                                 {/* Phương thức vận chuyển */}
                                 <motion.div
                                     variants={itemVariants}
-                                    className="bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 p-6 shadow-md"
+                                    className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 shadow-sm"
+                                    data-aos="fade-up"
+                                    data-aos-delay="150"
                                 >
                                     <div className="flex justify-between items-center mb-4">
                                         <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
-                                            <div className="bg-primary/10 p-2 rounded-full mr-2">
-                                                <FiTruck className="w-5 h-5 text-primary" />
+                                            <div className="bg-primary/10 dark:bg-accent/20 p-2 rounded-full mr-2">
+                                                <FiTruck className="w-5 h-5 text-primary dark:text-accent" />
                                             </div>
                                             Phương thức vận chuyển
                                         </h2>
                                         <motion.button
-                                            className="text-primary text-sm font-medium flex items-center bg-primary/5 px-3 py-1.5 rounded-lg hover:bg-primary/10"
+                                            className="text-primary dark:text-accent text-sm font-medium flex items-center bg-primary/5 dark:bg-accent/10 px-3 py-1.5 rounded-lg hover:bg-primary/10 dark:hover:bg-accent/20 transition-colors"
                                             onClick={() => setShowShippingModal(true)}
                                             whileHover={{ scale: 1.05 }}
                                             whileTap={{ scale: 0.95 }}
@@ -550,31 +598,35 @@ const OrderPage: React.FC = () => {
                                             initial={{ opacity: 0, y: 10 }}
                                             animate={{ opacity: 1, y: 0 }}
                                             transition={{ duration: 0.3 }}
-                                            className="p-4 bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600 rounded-lg"
+                                            className="p-4 bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-600 rounded-lg"
                                         >
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="bg-primary/20 p-2 rounded-full flex-shrink-0">
-                                                        <FiTruck className="w-5 h-5 text-primary" />
+                                                    <div className="bg-primary/20 dark:bg-accent/30 p-2 rounded-full flex-shrink-0">
+                                                        <FiTruck className="w-5 h-5 text-primary dark:text-accent" />
                                                     </div>
                                                     <div>
                                                         <p className="font-medium text-gray-900 dark:text-white">{selectedShippingMethod.name}</p>
                                                         <p className="text-sm text-gray-500 dark:text-gray-400">{selectedShippingMethod.estimatedDeliveryTime}</p>
                                                     </div>
                                                 </div>
-                                                <span className="inline-block text-sm bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded-full">
-                                                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(selectedShippingMethod.baseFee)}
+                                                <span className="inline-block text-sm bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-1 rounded-full">
+                                                    {new Intl.NumberFormat('vi-VN', {
+                                                        style: 'currency',
+                                                        currency: 'VND',
+                                                        maximumFractionDigits: 0
+                                                    }).format(selectedShippingMethod.baseFee)}
                                                 </span>
                                             </div>
                                         </motion.div>
                                     ) : (
-                                        <div className="text-center py-6 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                        <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
                                             <div className="mb-3">
-                                                <FiTruck className="w-8 h-8 text-primary mx-auto" />
+                                                <FiTruck className="w-8 h-8 text-primary dark:text-accent mx-auto" />
                                             </div>
                                             <p className="text-gray-600 dark:text-gray-300 mb-3 text-sm">Vui lòng chọn phương thức vận chuyển.</p>
                                             <motion.button
-                                                className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+                                                className="px-4 py-2 bg-primary dark:bg-accent hover:bg-primary/90 dark:hover:bg-accent/90 text-white rounded-lg text-sm font-medium transition-colors"
                                                 onClick={() => setShowShippingModal(true)}
                                                 whileHover={{ scale: 1.05 }}
                                                 whileTap={{ scale: 0.95 }}
@@ -588,17 +640,19 @@ const OrderPage: React.FC = () => {
                                 {/* Phương thức thanh toán */}
                                 <motion.div
                                     variants={itemVariants}
-                                    className="bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 p-6 shadow-md"
+                                    className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 shadow-sm"
+                                    data-aos="fade-up"
+                                    data-aos-delay="200"
                                 >
                                     <div className="flex justify-between items-center mb-4">
                                         <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
-                                            <div className="bg-primary/10 p-2 rounded-full mr-2">
-                                                <FiCreditCard className="w-5 h-5 text-primary" />
+                                            <div className="bg-primary/10 dark:bg-accent/20 p-2 rounded-full mr-2">
+                                                <FiCreditCard className="w-5 h-5 text-primary dark:text-accent" />
                                             </div>
                                             Phương thức thanh toán
                                         </h2>
                                         <motion.button
-                                            className="text-primary text-sm font-medium flex items-center bg-primary/5 px-3 py-1.5 rounded-lg hover:bg-primary/10"
+                                            className="text-primary dark:text-accent text-sm font-medium flex items-center bg-primary/5 dark:bg-accent/10 px-3 py-1.5 rounded-lg hover:bg-primary/10 dark:hover:bg-accent/20 transition-colors"
                                             onClick={() => setShowPaymentMethodModal(true)}
                                             whileHover={{ scale: 1.05 }}
                                             whileTap={{ scale: 0.95 }}
@@ -612,31 +666,31 @@ const OrderPage: React.FC = () => {
                                             initial={{ opacity: 0, y: 10 }}
                                             animate={{ opacity: 1, y: 0 }}
                                             transition={{ duration: 0.3 }}
-                                            className="p-4 bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600 rounded-lg"
+                                            className="p-4 bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-600 rounded-lg"
                                         >
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="bg-primary/20 p-2 rounded-full flex-shrink-0">
-                                                        <FiCreditCard className="w-5 h-5 text-primary" />
+                                                    <div className="bg-primary/20 dark:bg-accent/30 p-2 rounded-full flex-shrink-0">
+                                                        <FiCreditCard className="w-5 h-5 text-primary dark:text-accent" />
                                                     </div>
                                                     <div>
                                                         <p className="font-medium text-gray-900 dark:text-white">{selectedPaymentMethod.name}</p>
                                                         <p className="text-sm text-gray-500 dark:text-gray-400">{selectedPaymentMethod.code}</p>
                                                     </div>
                                                 </div>
-                                                <span className="inline-block text-sm bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded-full">
+                                                <span className="inline-block text-sm bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 px-2 py-1 rounded-full">
                                                     {selectedPaymentMethod.status ? 'Hoạt động' : 'Bảo trì'}
                                                 </span>
                                             </div>
                                         </motion.div>
                                     ) : (
-                                        <div className="text-center py-6 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                        <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
                                             <div className="mb-3">
-                                                <FiCreditCard className="w-8 h-8 text-primary mx-auto" />
+                                                <FiCreditCard className="w-8 h-8 text-primary dark:text-accent mx-auto" />
                                             </div>
                                             <p className="text-gray-600 dark:text-gray-300 mb-3 text-sm">Vui lòng chọn phương thức thanh toán.</p>
                                             <motion.button
-                                                className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+                                                className="px-4 py-2 bg-primary dark:bg-accent hover:bg-primary/90 dark:hover:bg-accent/90 text-white rounded-lg text-sm font-medium transition-colors"
                                                 onClick={() => setShowPaymentMethodModal(true)}
                                                 whileHover={{ scale: 1.05 }}
                                                 whileTap={{ scale: 0.95 }}
@@ -650,17 +704,19 @@ const OrderPage: React.FC = () => {
                                 {/* Ghi chú đơn hàng */}
                                 <motion.div
                                     variants={itemVariants}
-                                    className="bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 p-6 shadow-md"
+                                    className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 shadow-sm"
+                                    data-aos="fade-up"
+                                    data-aos-delay="250"
                                 >
                                     <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-                                        <div className="bg-primary/10 p-2 rounded-full mr-2">
-                                            <FiMessageSquare className="w-5 h-5 text-primary" />
+                                        <div className="bg-primary/10 dark:bg-accent/20 p-2 rounded-full mr-2">
+                                            <FiMessageSquare className="w-5 h-5 text-primary dark:text-accent" />
                                         </div>
                                         Ghi chú đơn hàng
                                     </h2>
                                     <textarea
                                         placeholder="Nhập ghi chú cho đơn hàng (tuỳ chọn). Ví dụ: Thời gian giao hàng, hướng dẫn giao hàng..."
-                                        className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none transition-all duration-300"
+                                        className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary dark:focus:ring-accent dark:focus:border-accent bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none transition-all duration-300"
                                         rows={4}
                                         value={orderNote}
                                         onChange={(e) => setOrderNote(e.target.value)}
@@ -670,11 +726,13 @@ const OrderPage: React.FC = () => {
                                 {/* Sản phẩm */}
                                 <motion.div
                                     variants={itemVariants}
-                                    className="bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 p-6 shadow-md"
+                                    className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5 shadow-sm"
+                                    data-aos="fade-up"
+                                    data-aos-delay="300"
                                 >
                                     <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-                                        <div className="bg-primary/10 p-2 rounded-full mr-2">
-                                            <FiPackage className="w-5 h-5 text-primary" />
+                                        <div className="bg-primary/10 dark:bg-accent/20 p-2 rounded-full mr-2">
+                                            <FiPackage className="w-5 h-5 text-primary dark:text-accent" />
                                         </div>
                                         Sản phẩm ({validCartItems.length})
                                     </h2>
@@ -702,6 +760,8 @@ const OrderPage: React.FC = () => {
                                     animate={{ opacity: 1, x: 0 }}
                                     transition={{ delay: 0.2 }}
                                     className="sticky top-6"
+                                    data-aos="fade-left"
+                                    data-aos-delay="150"
                                 >
                                     <OrderPreview
                                         orderItems={validCartItems}
@@ -724,6 +784,8 @@ const OrderPage: React.FC = () => {
                                     animate={{ opacity: 1, x: 0 }}
                                     transition={{ delay: 0.25 }}
                                     className="sticky top-6 mt-6"
+                                    data-aos="fade-left"
+                                    data-aos-delay="200"
                                 >
                                     <CouponInput orderTotal={totalPrice} onCouponApplied={handleCouponApplied} />
                                 </motion.div>
@@ -734,13 +796,15 @@ const OrderPage: React.FC = () => {
                                     animate={{ opacity: 1, x: 0 }}
                                     transition={{ delay: 0.3 }}
                                     className="sticky top-6 mt-6"
+                                    data-aos="fade-left"
+                                    data-aos-delay="250"
                                 >
                                     <OrderSummary
                                         itemCount={validCartItems.length}
                                         subtotal={totalPrice}
                                         shippingFee={shippingFee}
                                         couponDiscount={couponDiscount}
-                                        totalPrice={totalPrice + shippingFee}
+                                        totalPrice={totalPrice + shippingFee - couponDiscount}
                                         onCreateOrder={handleInitiateOrder}
                                         loading={processingOrder || orderLoading}
                                     />
@@ -766,7 +830,7 @@ const OrderPage: React.FC = () => {
                             animate={{ scale: 1, y: 0, opacity: 1 }}
                             exit={{ scale: 0.9, y: 20, opacity: 0 }}
                             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                            className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-2xl shadow-xl m-4 overflow-hidden"
+                            className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl shadow-xl m-4 overflow-hidden"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <AddressForm
@@ -798,18 +862,18 @@ const OrderPage: React.FC = () => {
                             animate={{ scale: 1, y: 0, opacity: 1 }}
                             exit={{ scale: 0.9, y: 20, opacity: 0 }}
                             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                            className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-2xl shadow-xl m-4"
+                            className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-2xl shadow-xl m-4"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            <div className="flex justify-between items-center mb-4 border-b border-gray-100 dark:border-gray-700 pb-4">
+                            <div className="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-gray-700 pb-4">
                                 <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
-                                    <div className="bg-primary/10 p-2 rounded-full mr-2">
-                                        <FiMap className="w-5 h-5 text-primary" />
+                                    <div className="bg-primary/10 dark:bg-accent/20 p-2 rounded-full mr-2">
+                                        <FiMap className="w-5 h-5 text-primary dark:text-accent" />
                                     </div>
                                     Chọn địa chỉ nhận hàng
                                 </h2>
                                 <motion.button
-                                    className="text-primary text-sm font-medium flex items-center bg-primary/5 px-3 py-1.5 rounded-lg hover:bg-primary/10"
+                                    className="text-primary dark:text-accent text-sm font-medium flex items-center bg-primary/5 dark:bg-accent/10 px-3 py-1.5 rounded-lg hover:bg-primary/10 dark:hover:bg-accent/20 transition-colors"
                                     onClick={() => {
                                         setAddressToEdit(undefined);
                                         setShowAddressModal(true);
@@ -844,12 +908,12 @@ const OrderPage: React.FC = () => {
                                         </motion.div>
                                     ))
                                 ) : (
-                                    <div className="text-center py-8 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                    <div className="text-center py-8 bg-gray-50 dark:bg-gray-700/30 rounded-lg">
                                         <p className="text-gray-600 dark:text-gray-300">Bạn chưa có địa chỉ nào.</p>
                                     </div>
                                 )}
                             </div>
-                            <div className="mt-6 flex justify-end pt-4 border-t border-gray-100 dark:border-gray-700">
+                            <div className="mt-6 flex justify-end pt-4 border-t border-gray-200 dark:border-gray-700">
                                 <motion.button
                                     className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
                                     onClick={() => setShowAddressListModal(false)}
@@ -883,7 +947,15 @@ const OrderPage: React.FC = () => {
             <ConfirmDialog
                 isOpen={showOrderConfirmModal}
                 title="Xác nhận đặt hàng"
-                message={`Bạn có chắc chắn muốn đặt đơn hàng với tổng giá trị ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalPrice + shippingFee - couponDiscount)}${couponDiscount > 0 ? ` (đã giảm ${new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(couponDiscount)})` : ''}?`}
+                message={`Bạn có chắc chắn muốn đặt đơn hàng với tổng giá trị ${new Intl.NumberFormat('vi-VN', {
+                    style: 'currency',
+                    currency: 'VND',
+                    maximumFractionDigits: 0
+                }).format(totalPrice + shippingFee - couponDiscount)}${couponDiscount > 0 ? ` (đã giảm ${new Intl.NumberFormat('vi-VN', {
+                    style: 'currency',
+                    currency: 'VND',
+                    maximumFractionDigits: 0
+                }).format(couponDiscount)})` : ''}?`}
                 confirmText="Đặt hàng và thanh toán"
                 cancelText="Hủy"
                 type="success"
@@ -906,7 +978,7 @@ const OrderPage: React.FC = () => {
                             animate={{ scale: 1, y: 0, opacity: 1 }}
                             exit={{ scale: 0.9, y: 20, opacity: 0 }}
                             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                            className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-2xl shadow-xl m-4 overflow-hidden"
+                            className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl shadow-xl m-4 overflow-hidden"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <ShippingMethodForm
@@ -936,7 +1008,7 @@ const OrderPage: React.FC = () => {
                             animate={{ scale: 1, y: 0, opacity: 1 }}
                             exit={{ scale: 0.9, y: 20, opacity: 0 }}
                             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                            className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-2xl shadow-xl m-4 overflow-hidden"
+                            className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-2xl shadow-xl m-4 overflow-hidden"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <PaymentMethodForm
@@ -950,7 +1022,7 @@ const OrderPage: React.FC = () => {
                     </motion.div>
                 )}
             </AnimatePresence>
-        </motion.div>
+        </div>
     );
 };
 

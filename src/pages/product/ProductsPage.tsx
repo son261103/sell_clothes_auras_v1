@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
+import {useNavigate, useSearchParams, useParams, Link} from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiFilter, FiRefreshCw, FiChevronRight, FiGrid, FiList } from 'react-icons/fi';
+import { FiFilter, FiRefreshCw, FiChevronRight, FiGrid, FiList, FiArrowLeft, FiAlertCircle } from 'react-icons/fi';
 import useProduct from '../../hooks/useProduct';
 import useBrandCategory from '../../hooks/useBrandCategory';
 import ProductGrid from '../../components/products/ProductGrid';
@@ -12,8 +12,10 @@ import ProductPagination from '../../components/products/ProductPagination';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import EmptyState from '../../components/common/EmptyState';
 import { ProductFilterParams } from '../../types/product.types';
-import {BrandDTO} from "../../types/brand.types.tsx";
-import {CategoryDTO} from "../../types/category.types.tsx";
+import { BrandDTO } from "../../types/brand.types.tsx";
+import { CategoryDTO } from "../../types/category.types.tsx";
+import AOS from 'aos';
+import 'aos/dist/aos.css';
 
 const ProductsPage: React.FC = () => {
     const navigate = useNavigate();
@@ -65,6 +67,18 @@ const ProductsPage: React.FC = () => {
         getCategoryWithSubcategories
     } = useBrandCategory();
 
+    // Initialize AOS animation library
+    useEffect(() => {
+        AOS.init({
+            duration: 800,
+            once: false,
+            mirror: true,
+            easing: 'ease-out-cubic',
+            delay: 50
+        });
+        return () => AOS.refresh();
+    }, []);
+
     // Handle URL params change
     useEffect(() => {
         // Only trigger this effect if URL params actually changed
@@ -112,7 +126,9 @@ const ProductsPage: React.FC = () => {
                 }
             } catch (error) {
                 console.error('Error initializing from URL:', error);
-                toast.error('Đã xảy ra lỗi khi tải dữ liệu');
+                toast.error('Đã xảy ra lỗi khi tải dữ liệu', {
+                    icon: <FiAlertCircle className="text-red-500" />,
+                });
             }
         };
 
@@ -155,7 +171,9 @@ const ProductsPage: React.FC = () => {
                     fetchSubcategories();
                 } catch (error) {
                     console.error('Error loading initial data:', error);
-                    toast.error('Đã xảy ra lỗi khi tải dữ liệu danh mục và thương hiệu');
+                    toast.error('Đã xảy ra lỗi khi tải dữ liệu danh mục và thương hiệu', {
+                        icon: <FiAlertCircle className="text-red-500" />,
+                    });
                 }
             } else {
                 console.log('Using cached category and brand data');
@@ -230,7 +248,9 @@ const ProductsPage: React.FC = () => {
             })
             .catch((err) => {
                 console.error('Error applying filters from search params:', err);
-                toast.error('Đã xảy ra lỗi khi tải sản phẩm');
+                toast.error('Đã xảy ra lỗi khi tải sản phẩm', {
+                    icon: <FiAlertCircle className="text-red-500" />,
+                });
             });
     }, [searchParams, applyFilters, categorySlug, brandSlug]);
 
@@ -285,7 +305,9 @@ const ProductsPage: React.FC = () => {
             navigate('/products', { replace: true });
         }
 
-        toast.success('Đã xóa tất cả bộ lọc');
+        toast.success('Đã xóa tất cả bộ lọc', {
+            icon: <FiRefreshCw className="text-green-500" />,
+        });
     }, [resetFilters, navigate, categorySlug, brandSlug]);
 
     // Handle filter changes
@@ -334,7 +356,9 @@ const ProductsPage: React.FC = () => {
 
         applyFilters(filterParams).catch((err) => {
             console.error('Error applying filters:', err);
-            toast.error('Đã xảy ra lỗi khi lọc sản phẩm');
+            toast.error('Đã xảy ra lỗi khi lọc sản phẩm', {
+                icon: <FiAlertCircle className="text-red-500" />,
+            });
         });
     }, [applyFilters, sortBy, sortDir]);
 
@@ -343,77 +367,147 @@ const ProductsPage: React.FC = () => {
         setViewMode(mode);
     }, []);
 
-    // Animation variants
-    const pageVariants = {
-        hidden: { opacity: 0 },
-        visible: {
-            opacity: 1,
-            transition: {
-                duration: 0.5,
-                when: "beforeChildren",
-                staggerChildren: 0.1
-            }
-        },
-        exit: {
-            opacity: 0,
-            transition: { duration: 0.3 }
-        }
-    };
-
-    const contentVariants = {
-        hidden: { opacity: 0, y: 20 },
-        visible: {
-            opacity: 1,
-            y: 0,
-            transition: { duration: 0.5 }
-        }
-    };
-
+    if (loading && products.length === 0) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+                <LoadingSpinner size="large" />
+            </div>
+        );
+    }
 
     return (
-        <motion.div
-            className="min-h-screen transition-colors duration-300"
-            variants={pageVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-        >
-            {/* Main Content with Enhanced Background */}
-            <div className="mx-auto px-4 sm:px-6 lg:px-8 py-6">
-                <motion.div
-                    className="bg-white dark:bg-gray-800 shadow-xl rounded-xl overflow-hidden transition-all duration-300 border border-gray-100 dark:border-gray-700"
-                    variants={contentVariants}
-                    ref={scrollRef}
-                >
-                    <div className="p-4 border-b border-gray-100 dark:border-gray-700">
-                        {/* Breadcrumb */}
-                        {(categoryDetail || brandDetail) && (
-                            <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-2 overflow-x-auto whitespace-nowrap py-1">
+        <div className="min-h-screen">
+            <AnimatePresence>
+                {mobileFiltersOpen && (
+                    <>
+                        <motion.div
+                            className="lg:hidden fixed inset-0 z-50 bg-black bg-opacity-60"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.3 }}
+                            onClick={() => setMobileFiltersOpen(false)}
+                        />
+                        <motion.div
+                            className="lg:hidden fixed inset-y-0 left-0 z-50 w-full max-w-xs bg-white dark:bg-gray-800 shadow-xl"
+                            initial={{ x: "-100%" }}
+                            animate={{ x: 0 }}
+                            exit={{ x: "-100%" }}
+                            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                        >
+                            <div className="px-6 py-5 flex items-center justify-between border-b border-gray-200 dark:border-gray-700">
+                                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Bộ lọc sản phẩm</h2>
                                 <button
-                                    className="hover:text-primary dark:hover:text-accent transition-colors duration-200"
-                                    onClick={() => navigate('/')}
+                                    type="button"
+                                    className="text-gray-400 hover:text-gray-600 dark:text-gray-300 dark:hover:text-gray-100 transition-colors duration-200"
+                                    onClick={() => setMobileFiltersOpen(false)}
                                 >
-                                    Trang chủ
-                                </button>
-                                <FiChevronRight className="mx-2" />
-
-                                <button
-                                    className="hover:text-primary dark:hover:text-accent transition-colors duration-200"
-                                    onClick={() => navigate('/products')}
-                                >
-                                    Sản phẩm
+                                    <svg
+                                        className="h-6 w-6"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke="currentColor"
+                                        aria-hidden="true"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M6 18L18 6M6 6l12 12"
+                                        />
+                                    </svg>
                                 </button>
                             </div>
-                        )}
-                    </div>
+                            <div className="p-6 overflow-y-auto" style={{ maxHeight: "calc(100vh - 80px)" }}>
+                                <ProductFilters
+                                    selectedCategories={selectedCategory ? [selectedCategory] : selectedCategories}
+                                    selectedBrands={selectedBrand ? [selectedBrand] : selectedBrands}
+                                    priceRange={priceRange}
+                                    onFilterChange={handleFilterChange}
+                                    onResetFilters={handleFilterReset}
+                                    isMobile
+                                    onClose={() => setMobileFiltersOpen(false)}
+                                    categories={activeParentCategories || []}
+                                    brands={activeBrands || []}
+                                    allCategories={allCategories}
+                                />
+                            </div>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
 
-                    <div className="flex flex-col lg:flex-row gap-8 p-6">
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6 max-w-7xl">
+                {/* Breadcrumb */}
+                <motion.nav
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                    className="flex items-center text-sm mb-8 text-gray-600 dark:text-gray-300 overflow-x-auto whitespace-nowrap bg-white dark:bg-gray-800 px-4 py-3 rounded-xl shadow-sm"
+                    data-aos="fade-down"
+                >
+                    <Link to="/" className="hover:text-primary dark:hover:text-accent transition-colors">
+                        Trang chủ
+                    </Link>
+                    <FiChevronRight className="mx-2 w-4 h-4 flex-shrink-0" />
+
+                    {categoryDetail ? (
+                        <>
+                            <Link to="/products" className="hover:text-primary dark:hover:text-accent transition-colors">
+                                Sản phẩm
+                            </Link>
+                            <FiChevronRight className="mx-2 w-4 h-4 flex-shrink-0" />
+                            <span className="text-gray-900 dark:text-white font-medium">
+                                {categoryDetail.name}
+                            </span>
+                        </>
+                    ) : brandDetail ? (
+                        <>
+                            <Link to="/products" className="hover:text-primary dark:hover:text-accent transition-colors">
+                                Sản phẩm
+                            </Link>
+                            <FiChevronRight className="mx-2 w-4 h-4 flex-shrink-0" />
+                            <span className="text-gray-900 dark:text-white font-medium">
+                                {brandDetail.name}
+                            </span>
+                        </>
+                    ) : (
+                        <span className="text-gray-900 dark:text-white font-medium">
+                            Sản phẩm
+                        </span>
+                    )}
+                </motion.nav>
+
+                {/* Back Button for Mobile */}
+                {(categoryDetail || brandDetail) && (
+                    <motion.button
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.5 }}
+                        onClick={() => navigate(-1)}
+                        className="md:hidden flex items-center text-primary dark:text-accent mb-6 hover:underline transition-colors"
+                        data-aos="fade-right"
+                    >
+                        <FiArrowLeft className="mr-2 w-5 h-5" /> Quay lại
+                    </motion.button>
+                )}
+
+                {/* Main Content */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6 }}
+                    className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden"
+                    data-aos="fade-up"
+                    ref={scrollRef}
+                >
+                    <div className="flex flex-col lg:flex-row">
                         {/* Filters - Desktop */}
-                        <motion.div
-                            className="hidden lg:block w-72 flex-shrink-0 bg-gray-50 dark:bg-gray-700 rounded-lg p-5 shadow-inner"
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ duration: 0.5, delay: 0.2 }}
+                        <div
+                            className="hidden lg:block lg:w-72 flex-shrink-0 p-6 border-r border-gray-200 dark:border-gray-700"
+                            data-aos="fade-right"
+                            data-aos-delay="100"
                         >
                             <ProductFilters
                                 selectedCategories={selectedCategory ? [selectedCategory] : selectedCategories}
@@ -425,72 +519,14 @@ const ProductsPage: React.FC = () => {
                                 brands={activeBrands || []}
                                 allCategories={allCategories}
                             />
-                        </motion.div>
+                        </div>
 
-                        {/* Filters - Mobile */}
-                        <AnimatePresence>
-                            {mobileFiltersOpen && (
-                                <>
-                                    <motion.div
-                                        className="lg:hidden fixed inset-0 z-50 bg-black bg-opacity-60"
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        exit={{ opacity: 0 }}
-                                        transition={{ duration: 0.3 }}
-                                        onClick={() => setMobileFiltersOpen(false)}
-                                    />
-                                    <motion.div
-                                        className="lg:hidden fixed inset-y-0 left-0 z-50 w-full max-w-xs bg-white dark:bg-gray-800 shadow-xl"
-                                        initial={{ x: "-100%" }}
-                                        animate={{ x: 0 }}
-                                        exit={{ x: "-100%" }}
-                                        transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                                    >
-                                        <div className="px-6 py-5 flex items-center justify-between border-b border-gray-200 dark:border-gray-700">
-                                            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Bộ lọc sản phẩm</h2>
-                                            <button
-                                                type="button"
-                                                className="text-gray-400 hover:text-gray-600 dark:text-gray-300 dark:hover:text-gray-100 transition-colors duration-200"
-                                                onClick={() => setMobileFiltersOpen(false)}
-                                            >
-                                                <svg
-                                                    className="h-6 w-6"
-                                                    xmlns="http://www.w3.org/2000/svg"
-                                                    fill="none"
-                                                    viewBox="0 0 24 24"
-                                                    stroke="currentColor"
-                                                    aria-hidden="true"
-                                                >
-                                                    <path
-                                                        strokeLinecap="round"
-                                                        strokeLinejoin="round"
-                                                        strokeWidth={2}
-                                                        d="M6 18L18 6M6 6l12 12"
-                                                    />
-                                                </svg>
-                                            </button>
-                                        </div>
-                                        <div className="p-6 overflow-y-auto" style={{ maxHeight: "calc(100vh - 80px)" }}>
-                                            <ProductFilters
-                                                selectedCategories={selectedCategory ? [selectedCategory] : selectedCategories}
-                                                selectedBrands={selectedBrand ? [selectedBrand] : selectedBrands}
-                                                priceRange={priceRange}
-                                                onFilterChange={handleFilterChange}
-                                                onResetFilters={handleFilterReset}
-                                                isMobile
-                                                onClose={() => setMobileFiltersOpen(false)}
-                                                categories={activeParentCategories || []}
-                                                brands={activeBrands || []}
-                                                allCategories={allCategories}
-                                            />
-                                        </div>
-                                    </motion.div>
-                                </>
-                            )}
-                        </AnimatePresence>
-
-                        {/* Main Content */}
-                        <div className="flex-1">
+                        {/* Main Content Area */}
+                        <div
+                            className="flex-1 p-6"
+                            data-aos="fade-left"
+                            data-aos-delay="200"
+                        >
                             <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                                 {/* Mobile filter button */}
                                 <div className="lg:hidden">
@@ -507,12 +543,12 @@ const ProductsPage: React.FC = () => {
                                 </div>
 
                                 {/* Controls: View Mode Toggle + Reset Filters */}
-                                <div className="flex items-center space-x-2">
-                                    {/* View mode toggle - UPDATED TO BE SMALLER */}
+                                <div className="flex items-center space-x-3">
+                                    {/* View mode toggle */}
                                     <div className="flex shadow-sm border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                                         <button
                                             type="button"
-                                            className={`p-1.5 ${
+                                            className={`p-2 ${
                                                 viewMode === 'grid'
                                                     ? 'bg-primary text-white shadow-inner'
                                                     : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
@@ -520,11 +556,11 @@ const ProductsPage: React.FC = () => {
                                             onClick={() => handleViewModeChange('grid')}
                                             title="Chế độ lưới"
                                         >
-                                            <FiGrid className="h-4 w-4" />
+                                            <FiGrid className="h-5 w-5" />
                                         </button>
                                         <button
                                             type="button"
-                                            className={`p-1.5 ${
+                                            className={`p-2 ${
                                                 viewMode === 'list'
                                                     ? 'bg-primary text-white shadow-inner'
                                                     : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
@@ -532,25 +568,25 @@ const ProductsPage: React.FC = () => {
                                             onClick={() => handleViewModeChange('list')}
                                             title="Chế độ danh sách"
                                         >
-                                            <FiList className="h-4 w-4" />
+                                            <FiList className="h-5 w-5" />
                                         </button>
                                     </div>
 
-                                    {/* Reset filters button - UPDATED TO BE SMALLER */}
+                                    {/* Reset filters button */}
                                     <motion.button
                                         type="button"
-                                        className="inline-flex items-center p-1.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200"
+                                        className="inline-flex items-center p-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200"
                                         onClick={handleFilterReset}
                                         whileHover={{ scale: 1.05 }}
                                         whileTap={{ scale: 0.95 }}
                                         title="Đặt lại bộ lọc"
                                     >
-                                        <FiRefreshCw className="h-4 w-4" />
+                                        <FiRefreshCw className="h-5 w-5" />
                                     </motion.button>
                                 </div>
 
                                 {/* Sorting */}
-                                <div className="w-full sm:w-64">
+                                <div className="w-full sm:w-auto">
                                     <ProductSorting />
                                 </div>
                             </div>
@@ -567,15 +603,16 @@ const ProductsPage: React.FC = () => {
                             )}
 
                             {/* Product Content */}
-                            {loading && products.length === 0 ? (
+                            {loading ? (
                                 <div className="flex justify-center items-center py-16">
                                     <motion.div
                                         initial={{ opacity: 0, scale: 0.8 }}
                                         animate={{ opacity: 1, scale: 1 }}
                                         transition={{ duration: 0.5 }}
+                                        className="text-center"
                                     >
-                                        <LoadingSpinner />
-                                        <p className="mt-4 text-gray-500 dark:text-gray-400 text-center">Đang tải sản phẩm...</p>
+                                        <LoadingSpinner size="large" />
+                                        <p className="mt-4 text-gray-500 dark:text-gray-400">Đang tải sản phẩm...</p>
                                     </motion.div>
                                 </div>
                             ) : error ? (
@@ -593,7 +630,7 @@ const ProductsPage: React.FC = () => {
                                 />
                             ) : products.length > 0 ? (
                                 <>
-                                    <div className={`bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-inner duration-300 ${loading ? 'opacity-70' : 'opacity-100'}`}>
+                                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-inner border border-gray-100 dark:border-gray-700 p-4">
                                         <ProductGrid
                                             products={products}
                                             loading={loading}
@@ -637,7 +674,7 @@ const ProductsPage: React.FC = () => {
                     </div>
                 </motion.div>
             </div>
-        </motion.div>
+        </div>
     );
 };
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
+import { motion, AnimatePresence } from 'framer-motion';
 import useProduct from '../../hooks/useProduct';
 import useCart from '../../hooks/useCart';
 import useAuth from '../../hooks/useAuth';
@@ -12,7 +13,7 @@ import ProductOptions from '../../components/product-detail/ProductOptions';
 import RelatedProducts from '../../components/product-detail/RelatedProducts';
 import AOS from 'aos';
 import 'aos/dist/aos.css';
-import { FiChevronRight, FiArrowLeft } from 'react-icons/fi';
+import { FiChevronRight, FiArrowLeft, FiShoppingCart, FiHeart, FiAlertCircle } from 'react-icons/fi';
 import { ProductImageDTO, ProductVariantDTO } from '../../types/product.types';
 import { CartAddItemDTO } from '../../types/cart.types';
 
@@ -25,6 +26,7 @@ const ProductDetailPage: React.FC = () => {
     const [selectedColor, setSelectedColor] = useState<string | null>(null);
     const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
     const [hasFetched, setHasFetched] = useState<boolean>(false);
+    const [showAlert, setShowAlert] = useState<boolean>(false);
 
     const {
         selectedProduct,
@@ -41,7 +43,13 @@ const ProductDetailPage: React.FC = () => {
     const { addItemToUserCart, getUserCart } = useCart();
 
     useEffect(() => {
-        AOS.init({ duration: 800, once: false, mirror: true });
+        AOS.init({
+            duration: 800,
+            once: false,
+            mirror: true,
+            easing: 'ease-out-cubic',
+            delay: 50
+        });
         return () => AOS.refresh();
     }, []);
 
@@ -54,7 +62,9 @@ const ProductDetailPage: React.FC = () => {
                 setHasFetched(true);
             } catch (err) {
                 console.error('Error fetching product:', err);
-                toast.error('Không thể tải thông tin sản phẩm');
+                toast.error('Không thể tải thông tin sản phẩm', {
+                    icon: <FiAlertCircle className="text-red-500" />,
+                });
                 setHasFetched(false);
             }
         };
@@ -112,27 +122,36 @@ const ProductDetailPage: React.FC = () => {
     const handleAddToCart = async () => {
         if (!selectedProduct || !activeVariant) return;
         if (!isAuthenticated) {
-            toast.error('Vui lòng đăng nhập để thêm sản phẩm vào giỏ hàng!');
+            toast.error('Vui lòng đăng nhập để thêm sản phẩm vào giỏ hàng!', {
+                icon: <FiAlertCircle className="text-red-500" />,
+            });
             navigate('/login');
             return;
         }
         if (!isVariantAvailable()) {
-            toast.error('Sản phẩm này hiện không có sẵn với lựa chọn này');
+            setShowAlert(true);
+            setTimeout(() => setShowAlert(false), 5000);
             return;
         }
         try {
             const cartItem: CartAddItemDTO = { variantId: activeVariant.variantId ?? 0, quantity };
             await addItemToUserCart(cartItem);
-            toast.success(`Đã thêm ${quantity} ${selectedProduct.name} vào giỏ hàng`);
+            toast.success(`Đã thêm ${quantity} ${selectedProduct.name} vào giỏ hàng`, {
+                icon: <FiShoppingCart className="text-green-500" />,
+            });
         } catch (error) {
             console.error('Error adding item to cart:', error);
-            toast.error('Không thể thêm sản phẩm vào giỏ hàng');
+            toast.error('Không thể thêm sản phẩm vào giỏ hàng', {
+                icon: <FiAlertCircle className="text-red-500" />,
+            });
         }
     };
 
     const handleAddToWishlist = () => {
         if (!selectedProduct) return;
-        toast.success(`Đã thêm ${selectedProduct.name} vào danh sách yêu thích`);
+        toast.success(`Đã thêm ${selectedProduct.name} vào danh sách yêu thích`, {
+            icon: <FiHeart className="text-red-500" />,
+        });
     };
 
     const formatPrice = (price: number): string =>
@@ -167,11 +186,30 @@ const ProductDetailPage: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen">
-            <div className="mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="min-h-screen ">
+            <AnimatePresence>
+                {showAlert && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -50 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -50 }}
+                        className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md"
+                    >
+                        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded shadow-md flex items-center">
+                            <FiAlertCircle className="w-5 h-5 mr-2" />
+                            <span>Sản phẩm này hiện không có sẵn với lựa chọn này</span>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 max-w-7xl">
                 {/* Breadcrumb */}
-                <nav
-                    className="flex items-center text-sm mb-8 text-gray-600 dark:text-gray-300 overflow-x-auto whitespace-nowrap"
+                <motion.nav
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                    className="flex items-center text-sm mb-8 text-gray-600 dark:text-gray-300 overflow-x-auto whitespace-nowrap bg-white dark:bg-gray-800 px-4 py-3 rounded-xl shadow-sm"
                     data-aos="fade-down"
                 >
                     <Link to="/" className="hover:text-primary dark:hover:text-accent transition-colors">
@@ -192,71 +230,106 @@ const ProductDetailPage: React.FC = () => {
                     <span className="text-gray-900 dark:text-white font-medium truncate max-w-md">
                         {selectedProduct.name}
                     </span>
-                </nav>
+                </motion.nav>
 
                 {/* Back Button for Mobile */}
-                <button
+                <motion.button
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.5 }}
                     onClick={() => navigate(-1)}
                     className="md:hidden flex items-center text-primary dark:text-accent mb-6 hover:underline transition-colors"
                     data-aos="fade-right"
                 >
                     <FiArrowLeft className="mr-2 w-5 h-5" /> Quay lại
-                </button>
+                </motion.button>
 
                 {/* Main Content */}
-                <div
-                    className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 md:p-8 flex flex-col lg:flex-row gap-8 lg:gap-12 justify-center"
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6 }}
+                    className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden"
                     data-aos="fade-up"
                 >
-                    {/* Product Images */}
-                    <div className="lg:w-1/2 flex justify-center">
-                        <ProductImages
-                            images={images}
-                            activeImageIndex={activeImageIndex}
-                            setActiveImageIndex={setActiveImageIndex}
-                            discount={calculateDiscount}
-                            productName={selectedProduct.name}
-                        />
-                    </div>
 
-                    {/* Product Options */}
-                    <div className="lg:w-1/2 flex flex-col gap-6">
-                        <ProductOptions
-                            availableSizes={availableSizes}
-                            availableColors={availableColors}
-                            productVariants={productVariants}
-                            selectedSize={selectedSize}
-                            setSelectedSize={setSelectedSize}
-                            selectedColor={selectedColor}
-                            setSelectedColor={setSelectedColor}
-                            quantity={quantity}
-                            setQuantity={setQuantity}
-                            activeVariant={activeVariant}
-                            handleAddToCart={handleAddToCart}
-                            handleAddToWishlist={handleAddToWishlist}
-                            isVariantAvailable={isVariantAvailable}
-                            formatPrice={formatPrice}
-                            product={selectedProduct}
-                        />
+                    <div className="flex flex-col lg:flex-row">
+                        {/* Product Images */}
+                        <div
+                            className="lg:w-1/2 p-6 flex justify-center border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700"
+                            data-aos="fade-right"
+                            data-aos-delay="100"
+                        >
+                            <ProductImages
+                                images={images}
+                                activeImageIndex={activeImageIndex}
+                                setActiveImageIndex={setActiveImageIndex}
+                                discount={calculateDiscount}
+                                productName={selectedProduct.name}
+                            />
+                        </div>
+
+                        {/* Product Options */}
+                        <div
+                            className="lg:w-1/2 p-6 md:p-8"
+                            data-aos="fade-left"
+                            data-aos-delay="200"
+                        >
+                            <ProductOptions
+                                availableSizes={availableSizes}
+                                availableColors={availableColors}
+                                productVariants={productVariants}
+                                selectedSize={selectedSize}
+                                setSelectedSize={setSelectedSize}
+                                selectedColor={selectedColor}
+                                setSelectedColor={setSelectedColor}
+                                quantity={quantity}
+                                setQuantity={setQuantity}
+                                activeVariant={activeVariant}
+                                handleAddToCart={handleAddToCart}
+                                handleAddToWishlist={handleAddToWishlist}
+                                isVariantAvailable={isVariantAvailable}
+                                formatPrice={formatPrice}
+                                product={selectedProduct}
+                            />
+                        </div>
                     </div>
-                </div>
+                </motion.div>
 
                 {/* Product Info Section */}
-                <div
+                <motion.div
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6, delay: 0.3 }}
                     className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 md:p-8 mt-8"
                     data-aos="fade-up"
                     data-aos-delay="200"
                 >
+                    <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-6">
+                        Thông tin sản phẩm
+                    </h2>
                     <ProductInfo
                         product={selectedProduct}
                         formatPrice={formatPrice}
                     />
-                </div>
+                </motion.div>
 
                 {/* Related Products */}
-                <div className="mt-12">
-                    <RelatedProducts relatedProducts={relatedProducts} />
-                </div>
+                <motion.div
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6, delay: 0.4 }}
+                    className="mt-12"
+                    data-aos="fade-up"
+                    data-aos-delay="300"
+                >
+                    <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mb-6">
+                        Sản phẩm liên quan
+                    </h2>
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 md:p-8">
+                        <RelatedProducts relatedProducts={relatedProducts} />
+                    </div>
+                </motion.div>
             </div>
         </div>
     );
