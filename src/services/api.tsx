@@ -398,12 +398,19 @@ const handleTokenRefresh = async (error: AxiosError<ApiResponse>, apiInstance: A
                     window.location.href = '/login';
                 }
             } else {
-                // Chuyển hướng đến trang OTP thay vì đăng xuất
+                // Sửa lại phần này để không chuyển đến trang OTP không tồn tại
+                // Thay vào đó, luôn chuyển đến trang đăng nhập
                 const email = typedError.response?.data?.email;
                 if (email) {
-                    localStorage.setItem('otpEmail', email);
+                    localStorage.setItem('loginEmail', email);
                 }
-                toast('Phiên đăng nhập hết hạn. Vui lòng xác thực lại qua OTP.', {
+
+                // Luôn cập nhật state Redux và xóa token
+                localStorage.removeItem('accessToken');
+                document.cookie = 'refreshToken=; Max-Age=0; path=/;';
+                store.dispatch(logout());
+
+                toast('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.', {
                     icon: '⚠️',
                     style: {
                         borderRadius: '10px',
@@ -411,8 +418,10 @@ const handleTokenRefresh = async (error: AxiosError<ApiResponse>, apiInstance: A
                         color: '#F57F17',
                     },
                 });
-                if (!window.location.pathname.includes('/otp')) {
-                    window.location.href = '/otp';
+
+                // Chỉ chuyển hướng nếu chưa ở trang login
+                if (!window.location.pathname.includes('/login')) {
+                    window.location.href = '/login';
                 }
             }
 

@@ -9,6 +9,7 @@ import paymentReducer from "./slices/paymentSlice.tsx";
 import paymentMethodReducer from "./slices/paymentMethodSlice.tsx";
 import couponReducer from "./slices/couponSlice.tsx";
 import brandCategoryReducer from "./slices/brandCategorySlice.tsx";
+import profileReducer from "./slices/profileSlice.tsx";
 
 export const store = configureStore({
     reducer: {
@@ -22,7 +23,7 @@ export const store = configureStore({
         paymentMethod: paymentMethodReducer,
         coupon: couponReducer,
         brandCategory: brandCategoryReducer,
-
+        profile: profileReducer,
         // Thêm các reducer khác nếu cần
     },
 });

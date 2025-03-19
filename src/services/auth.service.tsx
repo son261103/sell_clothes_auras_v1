@@ -1,4 +1,5 @@
 import { authApi } from './api';
+import { AxiosError, AxiosRequestConfig } from 'axios';
 import {
     LoginRequest,
     RegisterRequest,
@@ -10,8 +11,9 @@ import {
     RegisterResponse,
     ApiResponse,
     UserProfile,
+    ProfileUpdateDTO,
+    profileToUpdateDTO,
 } from '../types/auth.types';
-import { AxiosError } from 'axios';
 
 // Hàm lấy refresh token từ cookie
 const getRefreshToken = (): string | null => {
@@ -23,100 +25,92 @@ const getRefreshToken = (): string | null => {
     return cookies['refreshToken'] || null;
 };
 
-// Hàm đặt refresh token vào cookie - Enhanced with SameSite=Strict for better security
+// Hàm đặt refresh token vào cookie với SameSite=Strict để tăng cường bảo mật
 const setRefreshTokenCookie = (refreshToken: string): void => {
     document.cookie = `refreshToken=${refreshToken}; path=/; max-age=604800; SameSite=Strict;`; // 7 ngày
 };
 
-const AuthService = {
+// Hàm lấy cấu hình xác thực với token
+const getAuthConfig = (): AxiosRequestConfig => {
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+        console.warn('Không tìm thấy token trong localStorage');
+        return { headers: { 'Content-Type': 'application/json' } };
+    }
+    return {
+        headers: {
+            'Authorization': token.startsWith('Bearer ') ? token : `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+    };
+};
+
+// Định nghĩa interface cho AuthService
+interface AuthServiceInterface {
+    login: (loginRequest: LoginRequest) => Promise<TokenResponse>;
+    register: (registerRequest: RegisterRequest, otp?: string) => Promise<RegisterResponse>;
+    sendOtp: (email: string) => Promise<ApiResponse>;
+    resendOtp: (email: string) => Promise<ApiResponse>;
+    verifyOtp: (email: string, otp: string) => Promise<boolean>;
+    forgotPassword: (forgotPasswordRequest: ForgotPasswordRequest) => Promise<ApiResponse>;
+    resetPassword: (resetPasswordRequest: ResetPasswordRequest) => Promise<ApiResponse>;
+    refreshToken: () => Promise<TokenResponse>;
+    logout: () => Promise<ApiResponse>;
+    changePassword: (changePasswordRequest: ChangePasswordRequest) => Promise<ApiResponse>;
+    changePasswordWithOtp: (changePasswordRequest: ChangePasswordWithOtpRequest) => Promise<ApiResponse>;
+    getUserProfile: () => Promise<UserProfile>;
+    updateUserProfile: (profileUpdate: ProfileUpdateDTO | UserProfile) => Promise<UserProfile>;
+}
+
+const AuthService: AuthServiceInterface = {
     async login(loginRequest: LoginRequest): Promise<TokenResponse> {
         const response = await authApi.post<TokenResponse>('/auth/login', loginRequest);
+
+        // Chỉ lưu accessToken vào localStorage
         localStorage.setItem('accessToken', response.data.accessToken);
-        if (response.data.refreshToken) {
-            setRefreshTokenCookie(response.data.refreshToken);
-        }
+
         return response.data;
     },
 
-    async register(registerRequest: RegisterRequest, otp?: string): Promise<RegisterResponse> {
-        const response = await authApi.post<RegisterResponse>(
-            '/auth/register',
-            registerRequest,
-            { params: { otp } }
-        );
 
-        // Nếu đăng ký thành công, tự động gửi OTP
-        if (response.data && response.data.requiresEmailVerification) {
+    async register(registerRequest: RegisterRequest, otp?: string): Promise<RegisterResponse> {
+        const response = await authApi.post<RegisterResponse>('/auth/register', registerRequest, { params: { otp } });
+        if (response.data.requiresEmailVerification) {
             try {
-                // Gửi OTP sau khi đăng ký thành công
                 await this.sendOtp(registerRequest.email);
-                console.log('OTP sent successfully after registration');
             } catch (error) {
-                console.error('Could not send OTP after registration:', error);
-                // Không throw lỗi ở đây để không ảnh hưởng đến luồng đăng ký
+                console.error('Không thể gửi OTP sau khi đăng ký:', error);
             }
         }
-
         return response.data;
     },
 
     async sendOtp(email: string): Promise<ApiResponse> {
         try {
-            const response = await authApi.post<ApiResponse>('/auth/send-otp', null, {
-                params: { email },
-            });
-            console.log('Send OTP response:', response.data);
+            const response = await authApi.post<ApiResponse>('/auth/send-otp', null, { params: { email } });
             return response.data;
         } catch (error) {
             const axiosError = error as AxiosError<ApiResponse>;
-            console.error('Error sending OTP:', {
-                message: axiosError.message,
-                status: axiosError.response?.status,
-                data: axiosError.response?.data,
-            });
             throw axiosError.response?.data || { success: false, message: 'Không thể gửi mã OTP' };
         }
     },
 
     async resendOtp(email: string): Promise<ApiResponse> {
         try {
-            const response = await authApi.post<ApiResponse>('/auth/resend-otp', null, {
-                params: { email },
-            });
-            console.log('Resend OTP response:', response.data);
+            const response = await authApi.post<ApiResponse>('/auth/resend-otp', null, { params: { email } });
             return response.data;
         } catch (error) {
             const axiosError = error as AxiosError<ApiResponse>;
-            console.error('Error resending OTP:', {
-                message: axiosError.message,
-                status: axiosError.response?.status,
-                data: axiosError.response?.data,
-            });
             throw axiosError.response?.data || { success: false, message: 'Không thể gửi lại mã OTP' };
         }
     },
 
     async verifyOtp(email: string, otp: string): Promise<boolean> {
         try {
-            const response = await authApi.post<ApiResponse | boolean>('/auth/verify-otp', null, {
-                params: { email, otp },
-            });
-            console.log('Verify OTP response:', response.data);
-
-            // Kiểm tra cả response.data.success nếu API trả về ApiResponse
-            if (typeof response.data === 'boolean') {
-                return response.data;
-            } else if (response.data && 'success' in response.data) {
-                return response.data.success;
-            }
-            return false;
+            const response = await authApi.post<ApiResponse | boolean>('/auth/verify-otp', null, { params: { email, otp } });
+            return typeof response.data === 'boolean' ? response.data : response.data.success ?? false;
         } catch (error) {
             const axiosError = error as AxiosError<ApiResponse>;
-            console.error('Error verifying OTP:', {
-                message: axiosError.message,
-                status: axiosError.response?.status,
-                data: axiosError.response?.data,
-            });
             throw axiosError.response?.data || { success: false, message: 'Mã OTP không hợp lệ hoặc đã hết hạn' };
         }
     },
@@ -132,104 +126,148 @@ const AuthService = {
     },
 
     async refreshToken(): Promise<TokenResponse> {
-        const refreshToken = getRefreshToken();
+        const refreshToken = getRefreshToken() || localStorage.getItem('refreshTokenBackup');
         if (!refreshToken) {
-            throw new Error('No refresh token available');
+            throw new Error('Không tìm thấy refresh token');
         }
-
-        // Explicitly send the refresh token in the request body as expected by the backend
-        const response = await authApi.post<TokenResponse>('/auth/refresh-token', { refreshToken });
-
-        // Store the new tokens
-        localStorage.setItem('accessToken', response.data.accessToken);
-        if (response.data.refreshToken) {
-            setRefreshTokenCookie(response.data.refreshToken);
+        try {
+            const response = await authApi.post<TokenResponse>('/auth/refresh-token', { refreshToken });
+            localStorage.setItem('accessToken', response.data.accessToken);
+            if (response.data.refreshToken) {
+                setRefreshTokenCookie(response.data.refreshToken);
+                localStorage.setItem('refreshTokenBackup', response.data.refreshToken);
+            }
+            return response.data;
+        } catch (error) {
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshTokenBackup');
+            document.cookie = 'refreshToken=; Max-Age=0; path=/;';
+            throw error;
         }
-
-        return response.data;
     },
 
     async logout(): Promise<ApiResponse> {
         try {
             const refreshToken = getRefreshToken();
             let apiResponse: ApiResponse;
-
             if (refreshToken) {
-                try {
-                    // Try to logout on the server with the token
-                    const response = await authApi.post<ApiResponse>('/auth/logout', { refreshToken });
-                    console.log('Logout successful on server');
-                    apiResponse = response.data;
-                } catch (error) {
-                    // If server logout fails, log the error but continue with client-side logout
-                    console.error('Server logout failed, continuing with client-side logout:', error);
-                    apiResponse = {
-                        success: true,
-                        message: 'Logged out on client only'
-                    };
-                }
+                const config = getAuthConfig();
+                const response = await authApi.post<ApiResponse>('/auth/logout', { refreshToken }, config);
+                apiResponse = response.data;
             } else {
-                console.log('No refresh token found, performing client-side logout only');
-                apiResponse = {
-                    success: true,
-                    message: 'Logged out on client only'
-                };
+                apiResponse = { success: true, message: 'Đăng xuất phía client' };
             }
-
-            // Always clear local storage and cookies, regardless of server response
             localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshTokenBackup');
             document.cookie = 'refreshToken=; Max-Age=0; path=/;';
-
-            // Clear any other auth-related storage
             localStorage.removeItem('pendingActivationEmail');
             localStorage.removeItem('otpEmail');
-
-            console.log('Client-side logout complete');
             return apiResponse;
         } catch (error) {
-            console.error('Complete logout process failed:', error);
-
-            // Ensure tokens are removed even if there's an error
             localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshTokenBackup');
             document.cookie = 'refreshToken=; Max-Age=0; path=/;';
-
-            // Return a client-generated response for UI handling
-            return {
-                success: true,
-                message: 'Forced logout on client'
-            };
+            console.log('L��i đăng xuất:', error);
+            return { success: true, message: 'Đăng xuất cưỡng chế phía client' };
         }
     },
 
     async changePassword(changePasswordRequest: ChangePasswordRequest): Promise<ApiResponse> {
-        const response = await authApi.put<ApiResponse>('/auth/change-password', changePasswordRequest);
+        const config = getAuthConfig();
+        const response = await authApi.put<ApiResponse>('/auth/change-password', changePasswordRequest, config);
         return response.data;
     },
 
     async changePasswordWithOtp(changePasswordRequest: ChangePasswordWithOtpRequest): Promise<ApiResponse> {
-        const response = await authApi.put<ApiResponse>('/auth/change-password-otp', changePasswordRequest);
+        const config = getAuthConfig();
+        const response = await authApi.put<ApiResponse>('/auth/change-password-otp', changePasswordRequest, config);
         return response.data;
     },
 
     async getUserProfile(): Promise<UserProfile> {
         try {
-            const response = await authApi.get<UserProfile>('/auth/profile');
-            console.log('Profile fetched successfully:', response.data);
+            const config = getAuthConfig();
+            const token = localStorage.getItem('accessToken');
+            if (!token) {
+                await this.refreshToken();
+                return this.getUserProfile();
+            }
+            const response = await authApi.get<UserProfile>('/auth/profile', config);
             return response.data;
         } catch (error) {
             const axiosError = error as AxiosError<ApiResponse>;
-            console.error('Error fetching user profile:', {
-                message: axiosError.message,
-                status: axiosError.response?.status,
-                data: axiosError.response?.data,
-            });
+            if (axiosError.response?.status === 401) {
+                await this.refreshToken();
+                const config = getAuthConfig();
+                const retryResponse = await authApi.get<UserProfile>('/auth/profile', config);
+                return retryResponse.data;
+            }
             throw error;
         }
     },
 
-    async updateUserProfile(profile: UserProfile): Promise<UserProfile> {
-        const response = await authApi.put<UserProfile>('/auth/profile', profile);
-        return response.data;
+    async updateUserProfile(profileData: ProfileUpdateDTO | UserProfile): Promise<UserProfile> {
+        try {
+            // Chuyển đổi dữ liệu sang ProfileUpdateDTO nếu cần
+            const profileUpdate: ProfileUpdateDTO = 'userId' in profileData
+                ? profileToUpdateDTO(profileData as UserProfile)
+                : profileData as ProfileUpdateDTO;
+
+            // Lấy token
+            const token = localStorage.getItem('accessToken');
+            if (!token) {
+                throw new Error('Không tìm thấy token xác thực');
+            }
+            const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+
+            // Kiểm tra dữ liệu trước khi gửi
+            if (profileUpdate.dateOfBirth) {
+                const dateObj = new Date(profileUpdate.dateOfBirth);
+                if (isNaN(dateObj.getTime())) throw new Error('Ngày sinh không hợp lệ');
+                if (dateObj > new Date()) throw new Error('Ngày sinh không thể trong tương lai');
+            }
+
+            console.log('Dữ liệu cập nhật hồ sơ:', JSON.stringify(profileUpdate, null, 2));
+
+            // Gửi yêu cầu bằng fetch
+            const apiUrl = `${authApi.defaults.baseURL}auth/profile`;
+            const fetchResponse = await fetch(apiUrl, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': authToken,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(profileUpdate),
+                credentials: 'include',
+            });
+
+            if (!fetchResponse.ok) {
+                if (fetchResponse.status === 401) {
+                    await this.refreshToken();
+                    const newToken = localStorage.getItem('accessToken');
+                    if (!newToken) throw new Error('Không thể làm mới token');
+                    const refreshedAuthToken = newToken.startsWith('Bearer ') ? newToken : `Bearer ${newToken}`;
+                    const retryResponse = await fetch(apiUrl, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': refreshedAuthToken,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(profileUpdate),
+                        credentials: 'include',
+                    });
+                    if (!retryResponse.ok) throw new Error(`Lỗi ${retryResponse.status}: ${retryResponse.statusText}`);
+                    return await retryResponse.json();
+                }
+                const errorText = await fetchResponse.text();
+                throw new Error(`Lỗi ${fetchResponse.status}: ${errorText}`);
+            }
+
+            return await fetchResponse.json();
+        } catch (error) {
+            console.error('Lỗi cập nhật hồ sơ:', error);
+            throw error;
+        }
     },
 };
 

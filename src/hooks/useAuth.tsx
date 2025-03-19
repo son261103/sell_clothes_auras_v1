@@ -27,7 +27,14 @@ import {
     TokenResponse,
     RegisterResponse,
     ApiResponse,
+    profileToUpdateDTO,
+    ProfileUpdateDTO
 } from '../types/auth.types';
+
+// Variable to track profile request status
+let profileRequestInProgress = false;
+let lastProfileRequestTime = 0;
+const PROFILE_REQUEST_THROTTLE = 2000; // 2 seconds
 
 interface AuthHook {
     isAuthenticated: boolean;
@@ -41,7 +48,7 @@ interface AuthHook {
     register: (registerRequest: RegisterRequest, otp?: string) => Promise<RegisterResponse>;
     sendOtp: (email: string) => Promise<ApiResponse>;
     resendOtp: (email: string) => Promise<ApiResponse>;
-    verifyOtp: (email: string, otp: string) => Promise<boolean>; // Thay đổi thành Promise<boolean>
+    verifyOtp: (email: string, otp: string) => Promise<boolean>;
     forgotPassword: (forgotPasswordRequest: ForgotPasswordRequest) => Promise<ApiResponse>;
     resetPassword: (resetPasswordRequest: ResetPasswordRequest) => Promise<ApiResponse>;
     refreshToken: () => Promise<TokenResponse>;
@@ -49,7 +56,7 @@ interface AuthHook {
     changePassword: (changePasswordRequest: ChangePasswordRequest) => Promise<ApiResponse>;
     changePasswordWithOtp: (changePasswordRequest: ChangePasswordWithOtpRequest) => Promise<ApiResponse>;
     getUserProfile: () => Promise<UserProfile>;
-    updateUserProfile: (profile: UserProfile) => Promise<UserProfile>;
+    updateUserProfile: (profile: ProfileUpdateDTO | UserProfile) => Promise<UserProfile>;
     hasPermission: (permission: string) => boolean;
     hasRole: (role: string) => boolean;
 }
@@ -89,7 +96,7 @@ const useAuth = (): AuthHook => {
     };
 
     const verifyOtp = async (email: string, otp: string) => {
-        return AuthService.verifyOtp(email, otp); // Trả về Promise<boolean>
+        return AuthService.verifyOtp(email, otp);
     };
 
     const forgotPassword = async (forgotPasswordRequest: ForgotPasswordRequest) => {
@@ -107,8 +114,14 @@ const useAuth = (): AuthHook => {
     };
 
     const signOut = async () => {
-        await AuthService.logout();
-        dispatch(logout());
+        try {
+            await AuthService.logout();
+            dispatch(logout());
+        } catch (error) {
+            console.error('Error during logout:', error);
+            // Force logout anyway
+            dispatch(logout());
+        }
     };
 
     const changePassword = async (changePasswordRequest: ChangePasswordRequest) => {
@@ -120,15 +133,72 @@ const useAuth = (): AuthHook => {
     };
 
     const getUserProfile = async () => {
-        const profile = await AuthService.getUserProfile();
-        dispatch(setUserProfile(profile));
-        return profile;
+        try {
+            // Check if already authenticated with detailed user data
+            if (user && user.userId && Object.keys(user).length > 3) {
+                console.log('User profile already loaded, skipping fetch');
+                return user;
+            }
+
+            // Check for throttling
+            const now = Date.now();
+            if (now - lastProfileRequestTime < PROFILE_REQUEST_THROTTLE) {
+                console.log('Profile request throttled, returning current data');
+                return user || { userId: 0 } as UserProfile;
+            }
+
+            // Implement request tracking to prevent duplicate requests
+            if (profileRequestInProgress) {
+                console.log('Profile request already in progress, waiting...');
+                return new Promise<UserProfile>((resolve) => {
+                    // Wait for the current request to finish
+                    const checkInterval = setInterval(() => {
+                        if (!profileRequestInProgress) {
+                            clearInterval(checkInterval);
+                            resolve(user || { userId: 0 } as UserProfile);
+                        }
+                    }, 100);
+
+                    // Set a timeout to prevent infinite waiting
+                    setTimeout(() => {
+                        clearInterval(checkInterval);
+                        profileRequestInProgress = false;
+                        resolve(user || { userId: 0 } as UserProfile);
+                    }, 5000);
+                });
+            }
+
+            profileRequestInProgress = true;
+            lastProfileRequestTime = now;
+
+            const profile = await AuthService.getUserProfile();
+            if (profile) {
+                dispatch(setUserProfile(profile));
+            }
+
+            profileRequestInProgress = false;
+            return profile;
+        } catch (error) {
+            profileRequestInProgress = false;
+            console.error('Failed to get user profile:', error);
+            throw error;
+        }
     };
 
-    const updateUserProfile = async (profile: UserProfile) => {
-        const updatedProfile = await AuthService.updateUserProfile(profile);
-        dispatch(setUserProfile(updatedProfile));
-        return updatedProfile;
+    const updateUserProfile = async (profileData: ProfileUpdateDTO | UserProfile) => {
+        try {
+            // If we receive a full UserProfile object, convert it to ProfileUpdateDTO
+            const profileUpdateDTO = 'userId' in profileData
+                ? profileToUpdateDTO(profileData as UserProfile)
+                : profileData as ProfileUpdateDTO;
+
+            const updatedProfile = await AuthService.updateUserProfile(profileUpdateDTO);
+            dispatch(setUserProfile(updatedProfile));
+            return updatedProfile;
+        } catch (error) {
+            console.error('Failed to update user profile:', error);
+            throw error;
+        }
     };
 
     const hasPermission = (permission: string): boolean => permissions.includes(permission);

@@ -1,14 +1,19 @@
-// File: auth.types.ts
-
-// User status enum (matching backend)
+// User status enum (phù hợp với backend)
 export enum UserStatus {
-    ACTIVE = 1,
-    LOCKED = 2,
-    BANNER = 3, // Note: This matches your backend enum (BANNER instead of BANNED)
-    PENDING = 4
+    ACTIVE = "ACTIVE",
+    LOCKED = "LOCKED",
+    BANNER = "BANNER",
+    PENDING = "PENDING",
 }
 
-// Định nghĩa các DTOs cho request gửi từ client lên server
+// Gender enum (phù hợp với backend)
+export enum Gender {
+    MALE = "MALE",
+    FEMALE = "FEMALE",
+    OTHER = "OTHER",
+}
+
+// Request DTOs
 export interface LoginRequest {
     loginId: string;
     password: string;
@@ -49,12 +54,12 @@ export interface ChangePasswordWithOtpRequest {
     confirmPassword: string;
 }
 
-// Định nghĩa các DTOs cho response từ server
+// Response DTOs
 export interface ApiResponse {
     success: boolean;
     message: string;
     userStatus?: UserStatus;
-    email?: string; // Thêm trường này để backend trả về email trong trường hợp lỗi
+    email?: string;
 }
 
 export interface TokenResponse {
@@ -68,7 +73,7 @@ export interface TokenResponse {
     fullName: string;
     roles: string[];
     permissions: string[];
-    userStatus: UserStatus; // Added userStatus field
+    userStatus?: UserStatus;
 }
 
 export interface RegisterResponse {
@@ -77,9 +82,10 @@ export interface RegisterResponse {
     email: string;
     message: string;
     requiresEmailVerification: boolean;
-    userStatus: UserStatus; // Added userStatus field
+    userStatus?: UserStatus;
 }
 
+// User profile interface (phù hợp với phản hồi từ backend)
 export interface UserProfile {
     userId: number;
     username: string;
@@ -87,17 +93,45 @@ export interface UserProfile {
     fullName: string;
     phone?: string;
     avatar?: string;
-    status: UserStatus; // Changed to use enum
-    createdAt?: string;
+    status: string;
+    createdAt: string;
     lastLoginAt?: string;
     roles: string[];
     permissions: string[];
     address?: string;
     dateOfBirth?: string;
-    gender?: string;
+    gender?: 'MALE' | 'FEMALE' | 'OTHER';
 }
 
-// Interface for status modal configuration
+// Profile update DTO (phù hợp với cấu trúc backend mong đợi)
+export interface ProfileUpdateDTO {
+    fullName?: string;
+    email?: string;
+    phone?: string;
+    gender?: 'MALE' | 'FEMALE' | 'OTHER';
+    dateOfBirth?: string;
+    address?: string;
+}
+
+// Chuyển đổi từ UserProfile sang ProfileUpdateDTO
+export function profileToUpdateDTO(profile: UserProfile): ProfileUpdateDTO {
+    return {
+        fullName: profile.fullName || '',
+        email: profile.email || '',
+        phone: profile.phone || '',
+        gender: profile.gender || 'OTHER',
+        dateOfBirth: profile.dateOfBirth || '',
+        address: profile.address || '',
+    };
+}
+
+// Chuyển đổi string sang UserStatus
+export function toUserStatus(status: string | null | undefined): UserStatus | undefined {
+    if (!status || !Object.values(UserStatus).includes(status as UserStatus)) return undefined;
+    return status as UserStatus;
+}
+
+// Cấu hình modal trạng thái
 export interface StatusModalConfig {
     isOpen: boolean;
     type: 'locked' | 'banned' | 'pending';
