@@ -4,22 +4,20 @@ import { motion } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import { ProductResponseDTO } from '../../types/product.types';
 import { FiHeart, FiShoppingBag, FiStar } from 'react-icons/fi';
-import useCart from '../../hooks/useCart';
 import useAuth from '../../hooks/useAuth';
 import useFavorite from '../../hooks/useFavorite';
 
 interface ProductCardProps {
     product: ProductResponseDTO;
     viewMode?: 'grid' | 'list';
+    onOpenQuickView?: () => void; // New prop for opening quick view
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ product, viewMode = 'grid' }) => {
+const ProductCard: React.FC<ProductCardProps> = ({ product, viewMode = 'grid', onOpenQuickView }) => {
     const navigate = useNavigate();
     const [isHovered, setIsHovered] = useState(false);
-    const [isAddingToCart, setIsAddingToCart] = useState(false);
 
     const { isAuthenticated } = useAuth();
-    const { addItemToUserCart } = useCart();
     const { isFavorite, toggleFavorite } = useFavorite(product.productId);
 
     const formatPrice = (price: number) => {
@@ -48,7 +46,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, viewMode = 'grid' })
         }
     };
 
-    const handleAddToCart = async (e: React.MouseEvent) => {
+    const handleAddToCartClick = (e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
 
@@ -57,23 +55,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, viewMode = 'grid' })
             return;
         }
 
-        const variantId = product.productId;
-
-        try {
-            setIsAddingToCart(true);
-            await addItemToUserCart({
-                variantId: variantId,
-                quantity: 1
-            });
-            toast.success(`Đã thêm ${product.name} vào giỏ hàng`);
-        } catch (error) {
-            let message = 'Không thể thêm vào giỏ hàng';
-            if (error instanceof Error) {
-                message = error.message;
-            }
-            toast.error(message);
-        } finally {
-            setIsAddingToCart(false);
+        // Call the onOpenQuickView function from props instead of setting state locally
+        if (onOpenQuickView) {
+            onOpenQuickView();
+        } else {
+            toast.error('Không thể mở xem nhanh sản phẩm');
         }
     };
 
@@ -140,19 +126,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, viewMode = 'grid' })
                     {/* Add to cart overlay */}
                     <div className={`absolute inset-0 bg-primary/25 dark:bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
                         <button
-                            className="bg-white dark:bg-secondary text-primary dark:text-highlight px-3 py-1.5 rounded-full transform translate-y-6 group-hover:translate-y-0 transition-all duration-300 flex items-center gap-1.5 hover:bg-primary hover:text-white shadow-sm text-sm disabled:opacity-70 disabled:cursor-not-allowed z-30"
+                            className="bg-white dark:bg-secondary text-primary dark:text-highlight px-3 py-1.5 rounded-full transform translate-y-6 group-hover:translate-y-0 transition-all duration-300 flex items-center gap-1.5 hover:bg-primary hover:text-white shadow-sm text-sm z-30"
                             aria-label="Thêm vào giỏ hàng"
-                            onClick={handleAddToCart}
-                            disabled={isAddingToCart}
+                            onClick={handleAddToCartClick}
                         >
-                            {isAddingToCart ? (
-                                <span className="animate-pulse">Đang thêm...</span>
-                            ) : (
-                                <>
-                                    <FiShoppingBag className="w-3.5 h-3.5" />
-                                    <span className="font-medium">Thêm vào giỏ</span>
-                                </>
-                            )}
+                            <FiShoppingBag className="w-3.5 h-3.5" />
+                            <span className="font-medium">Thêm vào giỏ</span>
                         </button>
                     </div>
                 </div>
@@ -194,18 +173,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, viewMode = 'grid' })
                         </div>
 
                         <button
-                            className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-primary/10 hover:bg-primary/20 dark:bg-primary/20 dark:hover:bg-primary/30 text-primary dark:text-accent rounded-lg transition-colors duration-200 disabled:opacity-70 disabled:cursor-not-allowed z-30"
-                            onClick={handleAddToCart}
-                            disabled={isAddingToCart}
+                            className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-primary/10 hover:bg-primary/20 dark:bg-primary/20 dark:hover:bg-primary/30 text-primary dark:text-accent rounded-lg transition-colors duration-200 z-30"
+                            onClick={handleAddToCartClick}
                         >
-                            {isAddingToCart ? (
-                                <span className="animate-pulse">Đang thêm...</span>
-                            ) : (
-                                <>
-                                    <FiShoppingBag className="w-4 h-4" />
-                                    <span className="font-medium">Thêm vào giỏ</span>
-                                </>
-                            )}
+                            <FiShoppingBag className="w-4 h-4" />
+                            <span className="font-medium">Thêm vào giỏ</span>
                         </button>
                     </div>
                 </div>
@@ -216,7 +188,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, viewMode = 'grid' })
     // Grid view (default)
     return (
         <motion.div
-            className="group bg-white dark:bg-secondary/10 rounded-xl overflow-hidden shadow-sm  duration-300 border border-highlight/10 dark:border-secondary/30 hover:shadow-lg hover:border-primary/20 dark:hover:border-primary/30 h-full flex flex-col cursor-pointer"
+            className="group bg-white dark:bg-secondary/10 rounded-xl overflow-hidden shadow-sm duration-300 border border-highlight/10 dark:border-secondary/30 hover:shadow-lg hover:border-primary/20 dark:hover:border-primary/30 h-full flex flex-col cursor-pointer"
             whileHover={{ y: -3 }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
@@ -269,19 +241,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, viewMode = 'grid' })
                 {/* Add to cart overlay */}
                 <div className={`absolute inset-0 bg-primary/25 dark:bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
                     <button
-                        className="bg-white dark:bg-secondary text-primary dark:text-highlight px-4 py-1.5 rounded-full transform translate-y-6 group-hover:translate-y-0 transition-all duration-300 flex items-center gap-1.5 hover:bg-primary hover:text-white shadow-sm text-sm disabled:opacity-70 disabled:cursor-not-allowed z-30"
+                        className="bg-white dark:bg-secondary text-primary dark:text-highlight px-4 py-1.5 rounded-full transform translate-y-6 group-hover:translate-y-0 transition-all duration-300 flex items-center gap-1.5 hover:bg-primary hover:text-white shadow-sm text-sm z-30"
                         aria-label="Thêm vào giỏ hàng"
-                        onClick={handleAddToCart}
-                        disabled={isAddingToCart}
+                        onClick={handleAddToCartClick}
                     >
-                        {isAddingToCart ? (
-                            <span className="animate-pulse">Đang thêm...</span>
-                        ) : (
-                            <>
-                                <FiShoppingBag className="w-3.5 h-3.5" />
-                                <span className="font-medium">Thêm vào giỏ</span>
-                            </>
-                        )}
+                        <FiShoppingBag className="w-3.5 h-3.5" />
+                        <span className="font-medium">Thêm vào giỏ</span>
                     </button>
                 </div>
             </div>

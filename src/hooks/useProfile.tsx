@@ -1,3 +1,4 @@
+import { useEffect, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../redux/store';
 import {
@@ -39,6 +40,8 @@ import {
     selectLastRequestTimestamp
 } from '../redux/selectors/profileSelectors';
 
+import { selectIsAuthenticated, selectAccessToken } from '../redux/selectors/authSelectors';
+
 import ProfileService from '../services/profile.service';
 import {
     UserProfile,
@@ -51,12 +54,13 @@ import { ApiResponse } from "../types";
 
 // Variable to track profile request status
 let profileRequestInProgress = false;
+let fetchAttempted = false;
 const PROFILE_REQUEST_THROTTLE = 2000; // 2 seconds
 
-// Define interface for hook useProfile
+// Define interface for hook useProfile - renamed loading to isLoading
 interface UseProfileHook {
     profile: UserProfile | null;
-    loading: boolean;
+    isLoading: boolean;  // Changed loading to isLoading to match usage
     error: string | null;
     hasProfile: boolean;
     isUpdating: boolean;
@@ -65,7 +69,7 @@ interface UseProfileHook {
     passwordLoading: boolean;
     passwordError: string | null;
 
-    getProfile: () => Promise<UserProfile>;
+    getProfile: (force?: boolean) => Promise<UserProfile>;
     updateProfile: (profileUpdate: ProfileUpdateDTO) => Promise<UserProfile>;
 
     uploadAvatar: (file: File) => Promise<AvatarResponse>;
@@ -94,19 +98,27 @@ const useProfile = (): UseProfileHook => {
     const passwordLoading = useSelector(selectPasswordLoading);
     const passwordError = useSelector(selectPasswordError);
     const lastRequestTimestamp = useSelector(selectLastRequestTimestamp);
+    const isAuthenticated = useSelector(selectIsAuthenticated);
+    const accessToken = useSelector(selectAccessToken);
 
-    // Function to get user profile information
-    const getProfile = async (): Promise<UserProfile> => {
+    // Function to get user profile information - modified to use useCallback
+    const getProfile = useCallback(async (force: boolean = false): Promise<UserProfile> => {
         try {
+            // Don't fetch if not authenticated
+            if (!isAuthenticated || !accessToken) {
+                console.log('Not authenticated, skipping profile fetch');
+                return {} as UserProfile;
+            }
+
             // Check if already fetched complete profile data
-            if (profile && Object.keys(profile).length > 3) {
+            if (!force && profile && Object.keys(profile).length > 3) {
                 console.log('Profile already loaded, skipping fetch');
                 return profile;
             }
 
             // Check for throttling
             const now = Date.now();
-            if (now - lastRequestTimestamp < PROFILE_REQUEST_THROTTLE) {
+            if (!force && now - lastRequestTimestamp < PROFILE_REQUEST_THROTTLE) {
                 console.log('Profile request throttled, returning current data');
                 return profile || {} as UserProfile;
             }
@@ -134,25 +146,49 @@ const useProfile = (): UseProfileHook => {
 
             profileRequestInProgress = true;
             dispatch(getProfileStart());
+            console.log('Fetching user profile...');
 
             try {
                 // Fixed: Changed from getProfile to getUserProfile
                 const fetchedProfile = await ProfileService.getUserProfile();
+                console.log('Profile fetched successfully:', fetchedProfile);
                 dispatch(getProfileSuccess(fetchedProfile));
                 profileRequestInProgress = false;
+                fetchAttempted = true;
                 return fetchedProfile;
             } catch (err) {
-                const errorMessage = (err as Error).message || 'Không thể lấy thông tin hồ sơ';
+                console.error('Error fetching profile:', err);
+                const errorMessage = err instanceof Error ? err.message : 'Không thể lấy thông tin hồ sơ';
                 dispatch(getProfileFailure(errorMessage));
                 profileRequestInProgress = false;
+                fetchAttempted = true;
                 throw err;
             }
         } catch (error) {
             profileRequestInProgress = false;
+            fetchAttempted = true;
             console.error('Failed to get user profile:', error);
             throw error;
         }
-    };
+    }, [dispatch, profile, lastRequestTimestamp, isAuthenticated, accessToken]);
+
+    // Auto-fetch profile when authenticated
+    useEffect(() => {
+        // Only fetch if authenticated, not already loading, and haven't attempted fetch yet
+        if (isAuthenticated && accessToken && !loading && !fetchAttempted) {
+            console.log('Auto-fetching profile on mount');
+            getProfile(true).catch(err => {
+                console.error('Error in auto-fetch profile:', err);
+            });
+        }
+
+        // Reset fetch status when authentication changes
+        return () => {
+            if (!isAuthenticated) {
+                fetchAttempted = false;
+            }
+        };
+    }, [isAuthenticated, accessToken, loading, getProfile]);
 
     // Function to update user profile
     const updateProfile = async (profileUpdate: ProfileUpdateDTO): Promise<UserProfile> => {
@@ -162,7 +198,7 @@ const useProfile = (): UseProfileHook => {
             dispatch(updateProfileSuccess(updatedProfile));
             return updatedProfile;
         } catch (err) {
-            const errorMessage = (err as Error).message || 'Không thể cập nhật hồ sơ';
+            const errorMessage = err instanceof Error ? err.message : 'Không thể cập nhật hồ sơ';
             dispatch(updateProfileFailure(errorMessage));
             throw err;
         }
@@ -177,7 +213,7 @@ const useProfile = (): UseProfileHook => {
             dispatch(uploadAvatarSuccess(response));
             return response;
         } catch (err) {
-            const errorMessage = (err as Error).message || 'Không thể tải lên avatar';
+            const errorMessage = err instanceof Error ? err.message : 'Không thể tải lên avatar';
             dispatch(uploadAvatarFailure(errorMessage));
             throw err;
         }
@@ -192,7 +228,7 @@ const useProfile = (): UseProfileHook => {
             dispatch(updateAvatarSuccess(response));
             return response;
         } catch (err) {
-            const errorMessage = (err as Error).message || 'Không thể cập nhật avatar';
+            const errorMessage = err instanceof Error ? err.message : 'Không thể cập nhật avatar';
             dispatch(updateAvatarFailure(errorMessage));
             throw err;
         }
@@ -206,7 +242,7 @@ const useProfile = (): UseProfileHook => {
             dispatch(deleteAvatarSuccess(response));
             return response;
         } catch (err) {
-            const errorMessage = (err as Error).message || 'Không thể xóa avatar';
+            const errorMessage = err instanceof Error ? err.message : 'Không thể xóa avatar';
             dispatch(deleteAvatarFailure(errorMessage));
             throw err;
         }
@@ -220,7 +256,7 @@ const useProfile = (): UseProfileHook => {
             dispatch(changePasswordSuccess());
             return response;
         } catch (err) {
-            const errorMessage = (err as Error).message || 'Không thể thay đổi mật khẩu';
+            const errorMessage = err instanceof Error ? err.message : 'Không thể thay đổi mật khẩu';
             dispatch(changePasswordFailure(errorMessage));
             throw err;
         }
@@ -234,7 +270,7 @@ const useProfile = (): UseProfileHook => {
             dispatch(changePasswordWithOtpSuccess());
             return response;
         } catch (err) {
-            const errorMessage = (err as Error).message || 'Không thể thay đổi mật khẩu bằng OTP';
+            const errorMessage = err instanceof Error ? err.message : 'Không thể thay đổi mật khẩu bằng OTP';
             dispatch(changePasswordWithOtpFailure(errorMessage));
             throw err;
         }
@@ -252,7 +288,7 @@ const useProfile = (): UseProfileHook => {
 
     return {
         profile,
-        loading,
+        isLoading: loading,
         error,
         hasProfile,
         isUpdating,

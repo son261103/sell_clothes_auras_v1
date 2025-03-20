@@ -15,6 +15,7 @@ interface ProductGridProps {
     categories?: CategoryResponseDTO[];
     brands?: BrandResponseDTO[];
     expanded?: boolean; // For expanding the grid width
+    onOpenQuickView?: (product: ProductResponseDTO) => void; // New prop for opening quick view
 }
 
 const ProductGrid: React.FC<ProductGridProps> = memo(({
@@ -23,7 +24,8 @@ const ProductGrid: React.FC<ProductGridProps> = memo(({
                                                           viewMode = 'grid',
                                                           categories = [],
                                                           brands = [],
-                                                          expanded = true
+                                                          expanded = true,
+                                                          onOpenQuickView
                                                       }) => {
     const navigate = useNavigate();
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
@@ -292,7 +294,11 @@ const ProductGrid: React.FC<ProductGridProps> = memo(({
                             transition: { duration: 0.2 }
                         }}
                     >
-                        <ProductCard product={product} viewMode={viewMode} />
+                        <ProductCard
+                            product={product}
+                            viewMode={viewMode}
+                            onOpenQuickView={onOpenQuickView ? () => onOpenQuickView(product) : undefined}
+                        />
                     </motion.div>
                 ))}
 

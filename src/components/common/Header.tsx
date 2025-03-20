@@ -3,12 +3,11 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import Navbar from './Navbar';
 import useAuth from '../../hooks/useAuth';
+import useProfile from '../../hooks/useProfile'; // Import useProfile
 import useCart from '../../hooks/useCart';
 import useProduct from '../../hooks/useProduct';
 import { GiStarSwirl } from 'react-icons/gi';
-import { FiSearch, FiUser, FiHeart, FiShoppingBag, FiSun, FiMoon, FiMenu, FiX, FiMail } from 'react-icons/fi';
-import { AxiosError } from 'axios';
-import { ApiResponse } from '../../types/auth.types';
+import { FiSearch, FiUser, FiHeart, FiShoppingBag, FiSun, FiMoon, FiMenu, FiX, FiMail, FiLogOut, FiUserPlus, FiLogIn, FiPackage } from 'react-icons/fi';
 import { ProductResponseDTO } from '../../types/product.types';
 
 interface HeaderProps {
@@ -21,53 +20,62 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
     const [isScrolled, setIsScrolled] = useState(false);
     const [isSearchActive, setIsSearchActive] = useState(false);
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-    const [searchTerm, setSearchTerm] = useState(''); // Trạng thái tìm kiếm cục bộ
-    const [suggestions, setSuggestions] = useState<ProductResponseDTO[]>([]); // Gợi ý sản phẩm
+    const [searchTerm, setSearchTerm] = useState('');
+    const [suggestions, setSuggestions] = useState<ProductResponseDTO[]>([]);
+    const [avatarError, setAvatarError] = useState(false);
+    const [profileInitialized, setProfileInitialized] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
+    const userMenuRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
 
-    const { isAuthenticated, user, signOut, getUserProfile, accessToken } = useAuth();
+    // Auth và Profile hooks
+    const { isAuthenticated, user, signOut, accessToken } = useAuth();
+    const {
+        profile,
+        isLoading: isProfileLoading,
+        getProfile
+    } = useProfile();
+
     const { itemCount } = useCart();
     const { searchProducts } = useProduct();
 
-    // Fetch user profile if needed
+    // Chủ động tải profile khi component mount hoặc auth state thay đổi
     useEffect(() => {
-        const fetchUserIfNeeded = async () => {
-            if (accessToken && (!user || !user.username)) {
+        const fetchProfileIfNeeded = async () => {
+            if (isAuthenticated && accessToken && !profileInitialized && !isProfileLoading) {
                 try {
-                    await getUserProfile();
-                    console.log('User profile fetched successfully');
+                    console.log('Proactively fetching profile in Header');
+                    await getProfile(true); // force=true để bỏ qua cache
+                    setProfileInitialized(true);
                 } catch (err) {
-                    const axiosError = err as AxiosError<ApiResponse>;
-                    console.error('Không thể lấy thông tin người dùng:', axiosError);
-                    const currentPath = window.location.pathname;
-                    if (axiosError.response?.status === 401 && !currentPath.includes('/profile')) {
-                        toast.error('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
-                        await signOut();
-                    } else if (axiosError.response?.status === 400) {
-                        toast.error(axiosError.response?.data?.message || 'Yêu cầu không hợp lệ.');
-                    } else {
-                        toast.error('Không thể tải thông tin người dùng.');
-                    }
+                    console.error('Error fetching profile in Header:', err);
                 }
             }
         };
-        fetchUserIfNeeded();
-    }, [accessToken, getUserProfile, signOut, user]);
 
-    // Handle scroll effect
+        fetchProfileIfNeeded();
+    }, [isAuthenticated, accessToken, getProfile, isProfileLoading, profileInitialized]);
+
+    // Reset profileInitialized khi đăng xuất
+    useEffect(() => {
+        if (!isAuthenticated || !accessToken) {
+            setProfileInitialized(false);
+        }
+    }, [isAuthenticated, accessToken]);
+
+    // Xử lý hiệu ứng scroll
     useEffect(() => {
         const handleScroll = () => setIsScrolled(window.scrollY > 50);
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
-    // Close user menu on click outside
+    // Đóng menu người dùng khi click bên ngoài
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             const target = event.target as HTMLElement;
-            if (!target.closest('.user-menu-container') && isUserMenuOpen) {
+            if (userMenuRef.current && !userMenuRef.current.contains(target) && isUserMenuOpen) {
                 setIsUserMenuOpen(false);
             }
         };
@@ -75,7 +83,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isUserMenuOpen]);
 
-    // Handle search input focus and click outside
+    // Xử lý focus và click ngoài ô tìm kiếm
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             const target = event.target as HTMLElement;
@@ -91,7 +99,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isSearchActive]);
 
-    // Fetch product suggestions when search term changes (chỉ cho gợi ý, không áp dụng bộ lọc)
+    // Lấy gợi ý sản phẩm khi nhập từ khóa tìm kiếm
     useEffect(() => {
         const fetchSuggestions = async () => {
             if (searchTerm.length >= 3) {
@@ -111,15 +119,14 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
             }
         };
 
-        const timer = setTimeout(fetchSuggestions, 300); // Debounce API call by 300ms
+        const timer = setTimeout(fetchSuggestions, 300);
         return () => clearTimeout(timer);
-    }, [searchTerm]);
+    }, [searchTerm, searchProducts]);
 
-    // Handle search form submission
+    // Xử lý tìm kiếm
     const handleSearch = (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (searchTerm.trim()) {
-            // Điều hướng đến trang kết quả tìm kiếm mà không thay đổi trạng thái toàn cục
             navigate(`/products?search=${encodeURIComponent(searchTerm)}`);
             setSearchTerm('');
             setIsSearchActive(false);
@@ -129,7 +136,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         }
     };
 
-    // Toggle theme
+    // Chuyển đổi theme
     const toggleTheme = () => {
         document.documentElement.classList.toggle('dark', !isDarkMode);
         setIsDarkMode(!isDarkMode);
@@ -137,17 +144,121 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         toast.success(`Đã chuyển sang chế độ ${isDarkMode ? 'sáng' : 'tối'}`);
     };
 
-    // Handle logout
+    // Xử lý đăng xuất
     const handleLogout = async () => {
         try {
             await signOut();
             toast.success('Đăng xuất thành công!');
             setIsUserMenuOpen(false);
+            navigate('/');
         } catch (err) {
             toast.error('Đăng xuất thất bại.');
             console.error('Đăng xuất thất bại:', err);
         }
     };
+
+    // Hàm lấy URL avatar với timestamp để tránh cache
+    const getAvatarUrl = (url?: string): string => {
+        if (!url || avatarError) return '';
+        const timestamp = Date.now();
+        return url.includes('?') ? `${url}&t=${timestamp}` : `${url}?t=${timestamp}`;
+    };
+
+    // Lấy username từ nhiều nguồn
+    const getUsername = (): string => {
+        if (profile?.username) return profile.username;
+        if (user?.username) return user.username;
+        return 'User';
+    };
+
+    // Lấy email người dùng
+    const getUserEmail = (): string => {
+        if (profile?.email) return profile.email;
+        if (user?.email) return user.email;
+        return '';
+    };
+
+    // Lấy thời gian tham gia
+    const getJoinDate = (): string => {
+        if (profile?.createdAt) {
+            try {
+                return new Date(profile.createdAt).toLocaleDateString('vi-VN');
+            } catch (error) {
+                console.error('Error formatting date:', error);
+                return 'Không xác định';
+            }
+        }
+        return 'Không xác định';
+    };
+
+    // Hiển thị avatar hoặc icon user mặc định
+    const renderAvatar = () => {
+        if (isAuthenticated) {
+            const avatarUrl = profile?.avatar || user?.avatar;
+            if (avatarUrl && !avatarError) {
+                return (
+                    <div className="relative">
+                        <img
+                            src={getAvatarUrl(avatarUrl)}
+                            alt="Avatar"
+                            className="w-6 h-6 rounded-full object-cover border-2 border-primary"
+                            onError={() => setAvatarError(true)}
+                        />
+                        <span className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 rounded-full border border-white dark:border-darkBackground"></span>
+                    </div>
+                );
+            } else {
+                // Avatar placeholder
+                const username = getUsername();
+                const initial = username ? username.charAt(0).toUpperCase() : 'U';
+
+                return (
+                    <div className="relative w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold border-2 border-primary">
+                        {initial}
+                        <span className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 rounded-full border border-white dark:border-darkBackground"></span>
+                    </div>
+                );
+            }
+        } else {
+            return <FiUser className="w-5 h-5" />;
+        }
+    };
+
+    // Avatar lớn cho dropdown menu
+    const renderLargeAvatar = () => {
+        const avatarUrl = profile?.avatar || user?.avatar;
+        if (avatarUrl && !avatarError) {
+            return (
+                <img
+                    src={getAvatarUrl(avatarUrl)}
+                    alt="Avatar"
+                    className="w-12 h-12 rounded-full object-cover border-2 border-primary"
+                    onError={() => setAvatarError(true)}
+                />
+            );
+        } else {
+            // Avatar placeholder lớn
+            const username = getUsername();
+            const initial = username ? username.charAt(0).toUpperCase() : 'U';
+
+            return (
+                <div className="w-12 h-12 rounded-full bg-primary text-white flex items-center justify-center text-xl font-bold">
+                    {initial}
+                </div>
+            );
+        }
+    };
+
+    // Log profile state to debug
+    useEffect(() => {
+        if (profile) {
+            console.log('Profile state updated in Header:', {
+                username: profile.username,
+                hasAvatar: !!profile.avatar,
+                joinDate: profile.createdAt
+            });
+        }
+    }, [profile]);
 
     return (
         <header
@@ -167,7 +278,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
             </div>
 
             <div className="container mx-auto px-4 py-2.5 flex items-center justify-between relative">
-                {/* Mobile menu button */}
+                {/* Nút menu mobile */}
                 <button
                     className="md:hidden text-primary transition z-50 hover:text-accent"
                     onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -204,9 +315,9 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
 
                 <Navbar />
 
-                {/* Right-side icons */}
-                <div className="flex items-center space-x-2 md:space-x-3 z-50">
-                    {/* Search */}
+                {/* Các biểu tượng bên phải */}
+                <div className="flex items-center space-x-1 md:space-x-3 z-50">
+                    {/* Tìm kiếm */}
                     <div className="relative" ref={searchRef}>
                         <button
                             className="text-primary transition hover:text-accent p-1.5 rounded-full hover:bg-primary/10"
@@ -216,7 +327,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                             {isSearchActive ? <FiX className="w-5 h-5" /> : <FiSearch className="w-5 h-5" />}
                         </button>
                         <div
-                            className={`absolute right-0 mt-2 w-72 md:w-80 origin-top-right transition-all duration-300 transform z-50 bg-white dark:bg-darkBackground shadow-lg rounded-md overflow-hidden ${
+                            className={`absolute right-0 mt-2 w-72 md:w-80 origin-top-right transition-all duration-300 transform z-50 bg-white dark:bg-darkBackground rounded-md overflow-hidden shadow-xl ring-1 ring-black ring-opacity-5 ${
                                 isSearchActive ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
                             }`}
                         >
@@ -249,10 +360,10 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                                                 <img
                                                     src={product.thumbnail}
                                                     alt={product.name}
-                                                    className="w-10 h-10 object-cover mr-2"
+                                                    className="w-10 h-10 object-cover mr-2 rounded-md"
                                                 />
                                             )}
-                                            <span>{product.name}</span>
+                                            <span className="text-sm">{product.name}</span>
                                         </NavLink>
                                     ))}
                                 </div>
@@ -260,7 +371,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                         </div>
                     </div>
 
-                    {/* Cart */}
+                    {/* Giỏ hàng */}
                     <NavLink
                         to="/cart"
                         className={({ isActive }) =>
@@ -287,7 +398,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                         )}
                     </NavLink>
 
-                    {/* Theme toggle */}
+                    {/* Chuyển đổi theme */}
                     <button
                         onClick={toggleTheme}
                         className="text-primary transition hover:text-accent p-1.5 rounded-full hover:bg-primary/10"
@@ -296,101 +407,155 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                         {isDarkMode ? <FiSun className="w-5 h-5" /> : <FiMoon className="w-5 h-5" />}
                     </button>
 
-                    {/* User menu */}
-                    <div className="relative user-menu-container">
+                    {/* Menu người dùng - ĐƯỢC CẢI TIẾN */}
+                    <div className="relative user-menu-container" ref={userMenuRef}>
                         <button
                             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                            className="text-primary transition hover:text-accent p-1.5 rounded-full hover:bg-primary/10 flex items-center space-x-1"
+                            className={`text-primary transition hover:text-accent p-1 rounded-lg hover:bg-primary/10 flex items-center space-x-1 ${isUserMenuOpen ? 'bg-primary/10' : ''}`}
                             aria-label="Tài khoản"
                         >
-                            <FiUser className="w-5 h-5" />
-                            {isAuthenticated && user && (
-                                <span className="hidden sm:inline text-sm font-medium ml-1">
-                                    {user?.username || 'User'}
+                            {renderAvatar()}
+
+                            {isAuthenticated && (
+                                <span className="hidden sm:inline text-sm font-medium ml-1 max-w-[100px] truncate">
+                                    {getUsername()}
                                 </span>
                             )}
+
+                            <svg
+                                className={`hidden sm:block w-4 h-4 ml-1 transition-transform duration-200 ${isUserMenuOpen ? 'rotate-180' : ''}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                            </svg>
                         </button>
+
+                        {/* Dropdown menu - Được thiết kế lại */}
                         <div
-                            className={`absolute right-0 mt-2 origin-top-right transition-all duration-300 transform z-50 bg-white dark:bg-darkBackground shadow-lg rounded-md overflow-hidden ${
+                            className={`absolute right-0 mt-2 origin-top-right transition-all duration-300 transform z-50 bg-white dark:bg-darkBackground rounded-lg overflow-hidden shadow-xl ring-1 ring-black ring-opacity-5 ${
                                 isUserMenuOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
                             }`}
-                            style={{ width: '220px' }}
+                            style={{ width: '250px' }}
                         >
-                            <div className="py-2">
-                                {isAuthenticated && user ? (
-                                    <>
-                                        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
-                                            <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                                                Xin chào, {user?.username || 'User'}
-                                            </p>
-                                            {user?.email && (
-                                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center">
-                                                    <FiMail className="w-3 h-3 mr-1" /> {user.email}
+                            {isAuthenticated ? (
+                                <>
+                                    {/* User info section */}
+                                    <div className="px-4 py-3 bg-primary/5 dark:bg-primary/10 border-b border-gray-100 dark:border-gray-700">
+                                        <div className="flex items-center space-x-3">
+                                            {renderLargeAvatar()}
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">
+                                                    {getUsername()}
                                                 </p>
-                                            )}
+                                                {getUserEmail() && (
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex items-center truncate">
+                                                        <FiMail className="w-3 h-3 mr-1 flex-shrink-0" />
+                                                        <span className="truncate">{getUserEmail()}</span>
+                                                    </p>
+                                                )}
+                                            </div>
                                         </div>
+
+                                        <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700">
+                                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                                                Đã tham gia: {getJoinDate()}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Menu options */}
+                                    <div className="py-1">
                                         <NavLink
                                             to="/profile"
                                             className={({ isActive }) =>
-                                                `block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 ${
-                                                    isActive ? 'text-primary/80 font-bold' : ''
+                                                `flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-primary/20 ${
+                                                    isActive ? 'bg-primary/10 dark:bg-primary/20 font-medium' : ''
                                                 }`
                                             }
                                             onClick={() => setIsUserMenuOpen(false)}
                                         >
-                                            Hồ sơ cá nhân
+                                            <FiUser className="w-4 h-4 mr-3 text-primary" />
+                                            Thông tin cá nhân
                                         </NavLink>
+
                                         <NavLink
                                             to="/order/list"
                                             className={({ isActive }) =>
-                                                `block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 ${
-                                                    isActive ? 'text-primary/80 font-bold' : ''
+                                                `flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-primary/20 ${
+                                                    isActive ? 'bg-primary/10 dark:bg-primary/20 font-medium' : ''
                                                 }`
                                             }
                                             onClick={() => setIsUserMenuOpen(false)}
                                         >
+                                            <FiPackage className="w-4 h-4 mr-3 text-primary" />
                                             Đơn hàng của tôi
                                         </NavLink>
+
+                                        <NavLink
+                                            to="/wishlist"
+                                            className={({ isActive }) =>
+                                                `flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-primary/20 ${
+                                                    isActive ? 'bg-primary/10 dark:bg-primary/20 font-medium' : ''
+                                                }`
+                                            }
+                                            onClick={() => setIsUserMenuOpen(false)}
+                                        >
+                                            <FiHeart className="w-4 h-4 mr-3 text-primary" />
+                                            Danh sách yêu thích
+                                        </NavLink>
+                                    </div>
+
+                                    {/* Logout button */}
+                                    <div className="py-1 border-t border-gray-100 dark:border-gray-700">
                                         <button
                                             onClick={handleLogout}
-                                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20"
+                                            className="flex w-full items-center px-4 py-2.5 text-sm text-gray-700 dark:text-gray-200 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                                         >
+                                            <FiLogOut className="w-4 h-4 mr-3 text-red-500" />
                                             Đăng xuất
                                         </button>
-                                    </>
-                                ) : (
-                                    <>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    {/* Not authenticated - sign in/sign up */}
+                                    <div className="p-4">
+                                        <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                                            Chào mừng đến với AURAS Shop
+                                        </div>
+
                                         <NavLink
                                             to="/login"
-                                            className={({ isActive }) =>
-                                                `block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 ${
-                                                    isActive ? 'text-primary/80 font-bold' : ''
-                                                }`
-                                            }
+                                            className="flex items-center justify-center w-full bg-primary text-white py-2.5 px-4 rounded-md hover:bg-primary/90 transition mb-2 text-sm font-medium"
                                             onClick={() => setIsUserMenuOpen(false)}
                                         >
+                                            <FiLogIn className="w-4 h-4 mr-2" />
                                             Đăng nhập
                                         </NavLink>
+
                                         <NavLink
                                             to="/register"
-                                            className={({ isActive }) =>
-                                                `block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 ${
-                                                    isActive ? 'text-primary/80 font-bold' : ''
-                                                }`
-                                            }
+                                            className="flex items-center justify-center w-full border border-primary text-primary py-2.5 px-4 rounded-md hover:bg-primary/10 transition text-sm font-medium"
                                             onClick={() => setIsUserMenuOpen(false)}
                                         >
+                                            <FiUserPlus className="w-4 h-4 mr-2" />
                                             Đăng ký
                                         </NavLink>
-                                    </>
-                                )}
-                            </div>
+                                    </div>
+
+                                    <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/50 text-xs text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700">
+                                        Đăng nhập để theo dõi đơn hàng và nhận khuyến mãi đặc biệt!
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Mobile menu */}
+            {/* Menu mobile */}
             <div
                 className={`md:hidden fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity duration-300 ${
                     isMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -412,7 +577,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                     </button>
                 </div>
 
-                {/* Mobile search */}
+                {/* Tìm kiếm mobile */}
                 <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
                     <form onSubmit={handleSearch} className="flex items-center bg-gray-100 dark:bg-secondary/20 rounded-full overflow-hidden">
                         <input
@@ -442,7 +607,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                                         <img
                                             src={product.thumbnail}
                                             alt={product.name}
-                                            className="w-10 h-10 object-cover mr-2"
+                                            className="w-10 h-10 object-cover mr-2 rounded-md"
                                         />
                                     )}
                                     <span>{product.name}</span>
@@ -456,83 +621,105 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                     <Navbar isMobile onLinkClick={() => setIsMenuOpen(false)} />
                 </div>
 
+                {/* User section mobile - CẢI TIẾN */}
                 <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-                    {isAuthenticated && user ? (
+                    {isAuthenticated ? (
                         <>
-                            <div className="py-2 px-2 text-primary mb-2">
-                                <div className="flex items-center space-x-2 text-sm">
-                                    <FiUser className="w-4 h-4" />
-                                    <span>Xin chào, {user?.username || 'User'}</span>
-                                </div>
-                                {user?.email && (
-                                    <div className="flex items-center text-xs text-gray-500 dark:text-gray-400 mt-1.5 ml-6">
-                                        <FiMail className="w-3 h-3 mr-1" /> {user.email}
+                            {/* User profile heading */}
+                            <div className="px-2 py-3 bg-primary/5 dark:bg-primary/10 rounded-lg mb-3">
+                                <div className="flex items-center space-x-3">
+                                    {renderLargeAvatar()}
+                                    <div>
+                                        <div className="text-sm font-semibold">
+                                            Xin chào, {getUsername()}
+                                        </div>
+                                        {getUserEmail() && (
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex items-center">
+                                                <FiMail className="w-3 h-3 mr-1" />
+                                                <span className="truncate max-w-[150px]">{getUserEmail()}</span>
+                                            </p>
+                                        )}
                                     </div>
-                                )}
+                                </div>
                             </div>
-                            <NavLink
-                                to="/profile"
-                                className={({ isActive }) =>
-                                    `block py-2 px-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 rounded mb-1 ${
-                                        isActive ? 'text-primary/80 font-bold' : ''
-                                    }`
-                                }
-                                onClick={() => setIsMenuOpen(false)}
-                            >
-                                Hồ sơ cá nhân
-                            </NavLink>
-                            <NavLink
-                                to="/wishlist"
-                                className={({ isActive }) =>
-                                    `flex items-center space-x-2 py-2 px-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 rounded mb-1 sm-hidden ${
-                                        isActive ? 'text-primary/80 font-bold' : ''
-                                    }`
-                                }
-                                onClick={() => setIsMenuOpen(false)}
-                            >
-                                <FiHeart className="w-4 h-4" />
-                                <span>Danh sách yêu thích</span>
-                            </NavLink>
-                            <NavLink
-                                to="/order/list"
-                                className={({ isActive }) =>
-                                    `block py-2 px-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 rounded mb-1 ${
-                                        isActive ? 'text-primary/80 font-bold' : ''
-                                    }`
-                                }
-                                onClick={() => setIsMenuOpen(false)}
-                            >
-                                Đơn hàng của tôi
-                            </NavLink>
-                            <button
-                                onClick={handleLogout}
-                                className="w-full py-2 px-2 text-sm text-left text-gray-700 dark:text-gray-200 hover:bg-primary/10 dark:hover:bg-secondary/20 rounded"
-                            >
-                                Đăng xuất
-                            </button>
+
+                            {/* User menu options */}
+                            <div className="space-y-1">
+                                <NavLink
+                                    to="/profile"
+                                    className={({ isActive }) =>
+                                        `flex items-center p-2.5 text-sm rounded-md ${
+                                            isActive ? 'bg-primary/10 dark:bg-primary/20 text-primary font-medium' : 'text-gray-700 dark:text-gray-200 hover:bg-primary/5 dark:hover:bg-primary/10'
+                                        }`
+                                    }
+                                    onClick={() => setIsMenuOpen(false)}
+                                >
+                                    <FiUser className="w-4 h-4 mr-3" />
+                                    Thông tin cá nhân
+                                </NavLink>
+
+                                <NavLink
+                                    to="/order/list"
+                                    className={({ isActive }) =>
+                                        `flex items-center p-2.5 text-sm rounded-md ${
+                                            isActive ? 'bg-primary/10 dark:bg-primary/20 text-primary font-medium' : 'text-gray-700 dark:text-gray-200 hover:bg-primary/5 dark:hover:bg-primary/10'
+                                        }`
+                                    }
+                                    onClick={() => setIsMenuOpen(false)}
+                                >
+                                    <FiPackage className="w-4 h-4 mr-3" />
+                                    Đơn hàng của tôi
+                                </NavLink>
+
+                                <NavLink
+                                    to="/wishlist"
+                                    className={({ isActive }) =>
+                                        `flex items-center p-2.5 text-sm rounded-md ${
+                                            isActive ? 'bg-primary/10 dark:bg-primary/20 text-primary font-medium' : 'text-gray-700 dark:text-gray-200 hover:bg-primary/5 dark:hover:bg-primary/10'
+                                        }`
+                                    }
+                                    onClick={() => setIsMenuOpen(false)}
+                                >
+                                    <FiHeart className="w-4 h-4 mr-3" />
+                                    Danh sách yêu thích
+                                </NavLink>
+                            </div>
+
+                            {/* Logout button */}
+                            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                                <button
+                                    onClick={() => {
+                                        handleLogout();
+                                        setIsMenuOpen(false);
+                                    }}
+                                    className="flex w-full items-center justify-center p-2.5 text-sm bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-md hover:bg-red-100 dark:hover:bg-red-900/30"
+                                >
+                                    <FiLogOut className="w-4 h-4 mr-2" />
+                                    Đăng xuất
+                                </button>
+                            </div>
                         </>
                     ) : (
-                        <div className="space-y-2">
+                        <div className="space-y-3">
+                            <div className="text-center py-2 mb-2 text-sm text-gray-600 dark:text-gray-400">
+                                Đăng nhập để trải nghiệm đầy đủ các tính năng
+                            </div>
+
                             <NavLink
                                 to="/login"
-                                className={({ isActive }) =>
-                                    `w-full p-2.5 bg-primary text-white rounded-md hover:bg-opacity-90 transition block text-center mb-2 ${
-                                        isActive ? 'bg-opacity-90 font-bold' : ''
-                                    }`
-                                }
+                                className="flex items-center justify-center w-full bg-primary text-white p-2.5 rounded-md hover:bg-opacity-90 transition font-medium"
                                 onClick={() => setIsMenuOpen(false)}
                             >
+                                <FiLogIn className="w-4 h-4 mr-2" />
                                 Đăng nhập
                             </NavLink>
+
                             <NavLink
                                 to="/register"
-                                className={({ isActive }) =>
-                                    `w-full p-2.5 border border-primary text-primary hover:bg-primary/10 rounded-md transition block text-center ${
-                                        isActive ? 'bg-primary/10 font-bold' : ''
-                                    }`
-                                }
+                                className="flex items-center justify-center w-full border border-primary text-primary p-2.5 rounded-md hover:bg-primary/10 transition font-medium"
                                 onClick={() => setIsMenuOpen(false)}
                             >
+                                <FiUserPlus className="w-4 h-4 mr-2" />
                                 Đăng ký
                             </NavLink>
                         </div>

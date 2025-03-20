@@ -1,4 +1,4 @@
-import React, {useEffect, useState, useCallback, memo, useMemo} from 'react';
+import React, {useEffect, useState, useCallback, memo, useMemo, useRef} from 'react';
 import { FiChevronDown, FiSearch, FiX, FiCheck, FiFilter, FiRefreshCw } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CategoryResponseDTO } from '../../types/category.types';
@@ -50,6 +50,7 @@ const FilterSection: React.FC<{
     badge?: number; // New prop for selected count badge
     onClear?: () => void; // New prop for clear action
     showClear?: boolean; // Whether to show clear button
+    disabled?: boolean; // Disabled state
 }> = ({
           title,
           children,
@@ -57,7 +58,8 @@ const FilterSection: React.FC<{
           count,
           badge,
           onClear,
-          showClear = false
+          showClear = false,
+          disabled = false
       }) => {
     const [isOpen, setIsOpen] = useState(defaultOpen);
 
@@ -70,9 +72,10 @@ const FilterSection: React.FC<{
         >
             <div className="flex items-center justify-between mb-2">
                 <button
-                    className="flex items-center text-sm font-semibold text-gray-800 dark:text-gray-100 hover:text-primary dark:hover:text-accent transition-colors duration-200"
-                    onClick={() => setIsOpen(!isOpen)}
+                    className={`flex items-center text-sm font-semibold text-gray-800 dark:text-gray-100 hover:text-primary dark:hover:text-accent transition-colors duration-200 ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}
+                    onClick={() => !disabled && setIsOpen(!isOpen)}
                     type="button"
+                    disabled={disabled}
                 >
                     <div className="flex items-center">
                         <span className="text-base">{title}</span>
@@ -95,8 +98,9 @@ const FilterSection: React.FC<{
                 {showClear && badge !== undefined && badge > 0 && onClear && (
                     <button
                         onClick={onClear}
-                        className="text-xs text-primary dark:text-accent hover:underline transition-colors duration-200 flex items-center"
+                        className={`text-xs text-primary dark:text-accent hover:underline transition-colors duration-200 flex items-center ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}
                         type="button"
+                        disabled={disabled}
                     >
                         <FiX size={14} className="mr-1" />
                         Xóa
@@ -113,7 +117,10 @@ const FilterSection: React.FC<{
                         transition={{ duration: 0.3 }}
                         className="overflow-hidden"
                     >
-                        <div className="mt-3 bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm border border-gray-100 dark:border-gray-700">
+                        <div className="mt-3 bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm border border-gray-100 dark:border-gray-700 relative">
+                            {disabled && (
+                                <div className="absolute inset-0 bg-white/50 dark:bg-gray-800/50 rounded-lg z-10"></div>
+                            )}
                             {children}
                         </div>
                     </motion.div>
@@ -130,19 +137,32 @@ const PriceRangeInput: React.FC<{
     disabled?: boolean;
 }> = ({ value, onChange, placeholder, disabled = false }) => {
     const [inputValue, setInputValue] = useState(value?.toString() || '');
+    const inputRef = useRef<HTMLInputElement>(null);
+    const lastValueRef = useRef<number | null>(value);
 
     // Update input value when props change
     useEffect(() => {
-        setInputValue(value?.toString() || '');
+        if (value !== lastValueRef.current) {
+            setInputValue(value?.toString() || '');
+            lastValueRef.current = value;
+        }
     }, [value]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const rawValue = e.target.value;
         setInputValue(rawValue);
-        const numValue = rawValue ? parseInt(rawValue.replace(/\D/g, ''), 10) : null;
-        if (numValue !== value) {
+
+        // Don't immediately update for every keystroke
+        // The actual value will be updated on blur
+    };
+
+    const handleBlur = () => {
+        const numValue = inputValue ? parseInt(inputValue.replace(/\D/g, ''), 10) : null;
+        if (numValue !== lastValueRef.current) {
+            lastValueRef.current = numValue;
             onChange(numValue);
         }
+        setInputValue(inputValue ? formatValue(inputValue) : '');
     };
 
     const formatValue = (value: string) => {
@@ -153,12 +173,13 @@ const PriceRangeInput: React.FC<{
 
     return (
         <input
+            ref={inputRef}
             type="text"
             className={`w-full px-3 py-2 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary dark:focus:ring-accent transition-all duration-200 ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
             placeholder={placeholder}
             value={inputValue}
             onChange={handleChange}
-            onBlur={() => setInputValue(inputValue ? formatValue(inputValue) : '')}
+            onBlur={handleBlur}
             disabled={disabled}
         />
     );
@@ -199,6 +220,14 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
     const [brandSearchTerm, setBrandSearchTerm] = useState('');
     const [processedCategories, setProcessedCategories] = useState<CategoryResponseDTO[]>([]);
     const [expandedParentCategories, setExpandedParentCategories] = useState<Record<number, boolean>>({});
+    const [isFiltering, setIsFiltering] = useState<boolean>(false);
+
+    // Refs to track changes and prevent redundant operations
+    const filterTimeoutRef = useRef<number | null>(null);
+    const lastPriceRangeRef = useRef({ min: priceRange.min, max: priceRange.max });
+    const lastCategoriesRef = useRef<number[]>([...selectedCategories]);
+    const lastBrandsRef = useRef<number[]>([...selectedBrands]);
+    const isUpdatingRef = useRef<boolean>(false);
 
     // Process categories when allCategories changes
     useEffect(() => {
@@ -240,13 +269,27 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
 
     // Update local state when props change
     useEffect(() => {
-        setMinPrice(priceRange.min);
-        setMaxPrice(priceRange.max);
+        if (isUpdatingRef.current) return;
+
+        const priceChanged = priceRange.min !== lastPriceRangeRef.current.min ||
+            priceRange.max !== lastPriceRangeRef.current.max;
+
+        if (priceChanged) {
+            setMinPrice(priceRange.min);
+            setMaxPrice(priceRange.max);
+            lastPriceRangeRef.current = { min: priceRange.min, max: priceRange.max };
+        }
     }, [priceRange.min, priceRange.max]);
 
     // Auto-expand categories that have selected subcategories
     useEffect(() => {
-        if (selectedCategories.length > 0 && processedCategories.length > 0) {
+        if (isUpdatingRef.current) return;
+
+        const categoriesChanged =
+            selectedCategories.length !== lastCategoriesRef.current.length ||
+            selectedCategories.some(id => !lastCategoriesRef.current.includes(id));
+
+        if (categoriesChanged && selectedCategories.length > 0 && processedCategories.length > 0) {
             // Find selected subcategories
             const selectedSubcategories = processedCategories.filter(
                 cat => selectedCategories.includes(cat.categoryId) && cat.parentId !== null
@@ -265,77 +308,128 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
                 setExpandedParentCategories(parentsToExpand);
             }
 
-            console.log(`Found ${selectedSubcategories.length} selected subcategories`);
+            // Update reference
+            lastCategoriesRef.current = [...selectedCategories];
         }
     }, [selectedCategories, processedCategories, expandedParentCategories]);
 
+    // Update brands ref when props change
+    useEffect(() => {
+        if (isUpdatingRef.current) return;
+
+        const brandsChanged =
+            selectedBrands.length !== lastBrandsRef.current.length ||
+            selectedBrands.some(id => !lastBrandsRef.current.includes(id));
+
+        if (brandsChanged) {
+            lastBrandsRef.current = [...selectedBrands];
+        }
+    }, [selectedBrands]);
+
+    // Apply filters with debounce
+    const applyFiltersWithDebounce = useCallback((filters: FilterParams) => {
+        if (isLoading || isFiltering) return;
+
+        setIsFiltering(true);
+        isUpdatingRef.current = true;
+
+        // Clear any existing timeout
+        if (filterTimeoutRef.current) {
+            clearTimeout(filterTimeoutRef.current);
+        }
+
+        // Set a new timeout
+        filterTimeoutRef.current = setTimeout(() => {
+            onFilterChange(filters);
+
+            // Reset after a delay to allow rendering to complete
+            setTimeout(() => {
+                setIsFiltering(false);
+                isUpdatingRef.current = false;
+            }, 300);
+        }, 300);
+    }, [onFilterChange, isLoading, isFiltering]);
+
     // Change price range with debounce
     useEffect(() => {
-        if (minPrice !== priceRange.min || maxPrice !== priceRange.max) {
-            const timer = setTimeout(() => {
-                // Create an object only with changed properties
-                const updates: FilterParams = {};
+        if (isLoading || isFiltering || isUpdatingRef.current) return;
 
-                if (minPrice !== priceRange.min) {
-                    updates.minPrice = minPrice;
-                }
+        if (minPrice !== lastPriceRangeRef.current.min || maxPrice !== lastPriceRangeRef.current.max) {
+            // Update the reference immediately to prevent duplicate calls
+            lastPriceRangeRef.current = { min: minPrice, max: maxPrice };
 
-                if (maxPrice !== priceRange.max) {
-                    updates.maxPrice = maxPrice;
-                }
+            // Create an object only with changed properties
+            const updates: FilterParams = {};
 
-                if (Object.keys(updates).length > 0) {
-                    onFilterChange(updates);
-                }
-            }, 500);
-            return () => clearTimeout(timer);
+            if (minPrice !== priceRange.min) {
+                updates.minPrice = minPrice;
+            }
+
+            if (maxPrice !== priceRange.max) {
+                updates.maxPrice = maxPrice;
+            }
+
+            if (Object.keys(updates).length > 0) {
+                applyFiltersWithDebounce(updates);
+            }
         }
-    }, [minPrice, maxPrice, priceRange.min, priceRange.max, onFilterChange]);
+    }, [minPrice, maxPrice, priceRange.min, priceRange.max, applyFiltersWithDebounce, isLoading, isFiltering]);
 
     // Toggle expanded state for a parent category
     const toggleCategoryExpand = useCallback((categoryId: number) => {
+        if (isLoading || isFiltering) return;
+
         setExpandedParentCategories(prev => ({
             ...prev,
             [categoryId]: !prev[categoryId]
         }));
-    }, []);
+    }, [isLoading, isFiltering]);
 
     // Handle category selection - supports multiple selections
     const handleCategoryChange = useCallback((categoryId: number) => {
-        if (isLoading) return; // Prevent actions while loading
+        if (isLoading || isFiltering) return; // Prevent actions while loading
 
         // Toggle category in the array
         const newSelectedCategories = selectedCategories.includes(categoryId)
             ? selectedCategories.filter(id => id !== categoryId) // Remove category
             : [...selectedCategories, categoryId]; // Add new category
 
+        // Update the reference to prevent duplicate updates
+        lastCategoriesRef.current = [...newSelectedCategories];
+
         // Update filter with the new array
-        onFilterChange({
+        applyFiltersWithDebounce({
             categoryIds: newSelectedCategories.length > 0 ? newSelectedCategories : null
         });
-    }, [selectedCategories, onFilterChange, isLoading]);
+    }, [selectedCategories, applyFiltersWithDebounce, isLoading, isFiltering]);
 
     // Handle brand selection - supports multiple selections
     const handleBrandChange = useCallback((brandId: number) => {
-        if (isLoading) return; // Prevent actions while loading
+        if (isLoading || isFiltering) return; // Prevent actions while loading
 
         // Toggle brand in the array
         const newSelectedBrands = selectedBrands.includes(brandId)
             ? selectedBrands.filter(id => id !== brandId) // Remove brand
             : [...selectedBrands, brandId]; // Add new brand
 
+        // Update the reference to prevent duplicate updates
+        lastBrandsRef.current = [...newSelectedBrands];
+
         // Update filter with the new array
-        onFilterChange({
+        applyFiltersWithDebounce({
             brandIds: newSelectedBrands.length > 0 ? newSelectedBrands : null
         });
-    }, [selectedBrands, onFilterChange, isLoading]);
+    }, [selectedBrands, applyFiltersWithDebounce, isLoading, isFiltering]);
 
     // Clear price range filter
     const handleClearPriceRange = useCallback(() => {
-        if (isLoading) return; // Prevent actions while loading
+        if (isLoading || isFiltering) return; // Prevent actions while loading
 
         setMinPrice(null);
         setMaxPrice(null);
+
+        // Update the reference
+        lastPriceRangeRef.current = { min: null, max: null };
 
         // Create object with defined properties
         const updates: FilterParams = {
@@ -343,26 +437,32 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
             maxPrice: null
         };
 
-        onFilterChange(updates);
-    }, [onFilterChange, isLoading]);
+        applyFiltersWithDebounce(updates);
+    }, [applyFiltersWithDebounce, isLoading, isFiltering]);
 
     // Clear category selections
     const handleClearCategorySelections = useCallback(() => {
-        if (isLoading) return; // Prevent actions while loading
+        if (isLoading || isFiltering) return; // Prevent actions while loading
 
-        onFilterChange({
+        // Update the reference
+        lastCategoriesRef.current = [];
+
+        applyFiltersWithDebounce({
             categoryIds: null
         });
-    }, [onFilterChange, isLoading]);
+    }, [applyFiltersWithDebounce, isLoading, isFiltering]);
 
     // Clear brand selections
     const handleClearBrandSelections = useCallback(() => {
-        if (isLoading) return; // Prevent actions while loading
+        if (isLoading || isFiltering) return; // Prevent actions while loading
 
-        onFilterChange({
+        // Update the reference
+        lastBrandsRef.current = [];
+
+        applyFiltersWithDebounce({
             brandIds: null
         });
-    }, [onFilterChange, isLoading]);
+    }, [applyFiltersWithDebounce, isLoading, isFiltering]);
 
     // Group categories by parent
     const categoryGroups = useMemo(() => {
@@ -399,6 +499,15 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
     const selectedCategoryCount = selectedCategories.length;
     const selectedBrandCount = selectedBrands.length;
 
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (filterTimeoutRef.current) {
+                clearTimeout(filterTimeoutRef.current);
+            }
+        };
+    }, []);
+
     // Loading indicator
     const LoadingOverlay = () => (
         <div className="absolute inset-0 bg-white/50 dark:bg-gray-800/50 flex items-center justify-center z-50 rounded-lg">
@@ -411,7 +520,7 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
 
     return (
         <div className="relative">
-            {isLoading && <LoadingOverlay />}
+            {(isLoading || isFiltering) && <LoadingOverlay />}
 
             <motion.div
                 className="space-y-6"
@@ -426,11 +535,11 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
                     </div>
                     <button
                         onClick={onResetFilters}
-                        className={`flex items-center px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-xs ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        className={`flex items-center px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-xs ${(isLoading || isFiltering) ? 'opacity-50 cursor-not-allowed' : ''}`}
                         type="button"
-                        disabled={isLoading}
+                        disabled={isLoading || isFiltering}
                     >
-                        <FiRefreshCw className={`mr-1 h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
+                        <FiRefreshCw className={`mr-1 h-3 w-3 ${(isLoading || isFiltering) ? 'animate-spin' : ''}`} />
                         Đặt lại
                     </button>
                 </div>
@@ -442,23 +551,24 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
                     badge={selectedCategoryCount}
                     onClear={handleClearCategorySelections}
                     showClear={true}
+                    disabled={isLoading || isFiltering}
                 >
                     <div className="mb-3 relative">
                         <input
                             type="text"
-                            className={`w-full px-3 py-2 pl-9 text-sm text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary dark:focus:ring-accent transition-all duration-200 ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 pl-9 text-sm text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary dark:focus:ring-accent transition-all duration-200 ${(isLoading || isFiltering) ? 'opacity-60 cursor-not-allowed' : ''}`}
                             placeholder="Tìm danh mục..."
                             value={categorySearchTerm}
                             onChange={(e) => setCategorySearchTerm(e.target.value)}
-                            disabled={isLoading}
+                            disabled={isLoading || isFiltering}
                         />
                         <FiSearch className="absolute left-3 top-2.5 text-gray-400 dark:text-gray-500" />
                         {categorySearchTerm && (
                             <button
-                                className={`absolute right-3 top-2.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                className={`absolute right-3 top-2.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 ${(isLoading || isFiltering) ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 onClick={() => setCategorySearchTerm('')}
                                 type="button"
-                                disabled={isLoading}
+                                disabled={isLoading || isFiltering}
                             >
                                 <FiX size={16} />
                             </button>
@@ -486,7 +596,7 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
                                                         className="h-4 w-4 text-primary border-gray-300 rounded focus:ring-2 focus:ring-primary dark:focus:ring-accent transition-colors duration-200"
                                                         checked={selectedCategories.includes(parent.categoryId)}
                                                         onChange={() => handleCategoryChange(parent.categoryId)}
-                                                        disabled={isLoading}
+                                                        disabled={isLoading || isFiltering}
                                                     />
                                                     {selectedCategories.includes(parent.categoryId) && (
                                                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -506,8 +616,8 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
                                             {categoryGroups.groups[parent.categoryId]?.length > 0 && (
                                                 <button
                                                     onClick={() => toggleCategoryExpand(parent.categoryId)}
-                                                    className={`ml-auto p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                                    disabled={isLoading}
+                                                    className={`ml-auto p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 ${(isLoading || isFiltering) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                    disabled={isLoading || isFiltering}
                                                 >
                                                     <FiChevronDown
                                                         className={`h-3 w-3 transition-transform duration-300 ${
@@ -539,7 +649,7 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
                                                                             className="h-3.5 w-3.5 text-primary border-gray-300 rounded focus:ring-2 focus:ring-primary dark:focus:ring-accent transition-colors duration-200"
                                                                             checked={selectedCategories.includes(subcat.categoryId)}
                                                                             onChange={() => handleCategoryChange(subcat.categoryId)}
-                                                                            disabled={isLoading}
+                                                                            disabled={isLoading || isFiltering}
                                                                         />
                                                                         {selectedCategories.includes(subcat.categoryId) && (
                                                                             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -578,23 +688,24 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
                     badge={selectedBrandCount}
                     onClear={handleClearBrandSelections}
                     showClear={true}
+                    disabled={isLoading || isFiltering}
                 >
                     <div className="mb-3 relative">
                         <input
                             type="text"
-                            className={`w-full px-3 py-2 pl-9 text-sm text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary dark:focus:ring-accent transition-all duration-200 ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
+                            className={`w-full px-3 py-2 pl-9 text-sm text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-primary dark:focus:ring-accent transition-all duration-200 ${(isLoading || isFiltering) ? 'opacity-60 cursor-not-allowed' : ''}`}
                             placeholder="Tìm thương hiệu..."
                             value={brandSearchTerm}
                             onChange={(e) => setBrandSearchTerm(e.target.value)}
-                            disabled={isLoading}
+                            disabled={isLoading || isFiltering}
                         />
                         <FiSearch className="absolute left-3 top-2.5 text-gray-400 dark:text-gray-500" />
                         {brandSearchTerm && (
                             <button
-                                className={`absolute right-3 top-2.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                className={`absolute right-3 top-2.5 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 ${(isLoading || isFiltering) ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 onClick={() => setBrandSearchTerm('')}
                                 type="button"
-                                disabled={isLoading}
+                                disabled={isLoading || isFiltering}
                             >
                                 <FiX size={16} />
                             </button>
@@ -622,7 +733,7 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
                                                     className="h-4 w-4 text-primary border-gray-300 rounded focus:ring-2 focus:ring-primary dark:focus:ring-accent transition-colors duration-200"
                                                     checked={selectedBrands.includes(brand.brandId)}
                                                     onChange={() => handleBrandChange(brand.brandId)}
-                                                    disabled={isLoading}
+                                                    disabled={isLoading || isFiltering}
                                                 />
                                                 {selectedBrands.includes(brand.brandId) && (
                                                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -663,12 +774,23 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
                     title="Khoảng giá"
                     onClear={handleClearPriceRange}
                     showClear={minPrice !== null || maxPrice !== null}
+                    disabled={isLoading || isFiltering}
                 >
                     <div className="space-y-3">
                         <div className="flex items-center gap-2">
-                            <PriceRangeInput value={minPrice} onChange={setMinPrice} placeholder="Từ" disabled={isLoading} />
+                            <PriceRangeInput
+                                value={minPrice}
+                                onChange={setMinPrice}
+                                placeholder="Từ"
+                                disabled={isLoading || isFiltering}
+                            />
                             <span className="text-gray-500 dark:text-gray-400">-</span>
-                            <PriceRangeInput value={maxPrice} onChange={setMaxPrice} placeholder="Đến" disabled={isLoading} />
+                            <PriceRangeInput
+                                value={maxPrice}
+                                onChange={setMaxPrice}
+                                placeholder="Đến"
+                                disabled={isLoading || isFiltering}
+                            />
                         </div>
                     </div>
                 </FilterSection>
@@ -683,11 +805,11 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
                     >
                         <button
                             onClick={onClose}
-                            className={`w-full bg-primary hover:bg-primary/90 text-white py-3 rounded-lg font-medium transition-colors duration-200 ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
+                            className={`w-full bg-primary hover:bg-primary/90 text-white py-3 rounded-lg font-medium transition-colors duration-200 ${(isLoading || isFiltering) ? 'opacity-70 cursor-not-allowed' : ''}`}
                             type="button"
-                            disabled={isLoading}
+                            disabled={isLoading || isFiltering}
                         >
-                            {isLoading ? (
+                            {(isLoading || isFiltering) ? (
                                 <span className="flex items-center justify-center">
                                     <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>

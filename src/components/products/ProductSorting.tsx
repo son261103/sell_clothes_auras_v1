@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { FiChevronDown } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -26,11 +26,13 @@ interface ProductSortingProps {
 
 const ProductSorting: React.FC<ProductSortingProps> = ({ isLoading = false }) => {
     const { applyFilters, sortBy, sortDir } = useProduct();
-    const [searchParams, setSearchParams] = useSearchParams();
+    const [searchParams] = useSearchParams();
     const [isOpen, setIsOpen] = useState<boolean>(false);
     const [selectedSort, setSelectedSort] = useState<SortOption>(sortOptions[0]);
     const [isSorting, setIsSorting] = useState<boolean>(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const isUpdatingRef = useRef<boolean>(false);
+    const lastSortRef = useRef<{value: string, direction: 'asc' | 'desc'} | null>(null);
 
     // Animation variants
     const dropdownVariants = {
@@ -69,10 +71,18 @@ const ProductSorting: React.FC<ProductSortingProps> = ({ isLoading = false }) =>
         };
     }, []);
 
-    // Sync with URL parameters
+    // Sync with URL parameters - only on component mount and when sortBy/sortDir changes from outside
     useEffect(() => {
+        if (isUpdatingRef.current) return;
+
         const currentSortBy = searchParams.get('sortBy') || sortBy || 'createdAt';
         const currentSortDir = (searchParams.get('sortDir') as 'asc' | 'desc') || sortDir || 'desc';
+
+        // Skip if no change from the last option
+        if (lastSortRef.current?.value === currentSortBy &&
+            lastSortRef.current?.direction === currentSortDir) {
+            return;
+        }
 
         const foundOption = sortOptions.find(
             option => option.value === currentSortBy && option.direction === currentSortDir
@@ -80,45 +90,71 @@ const ProductSorting: React.FC<ProductSortingProps> = ({ isLoading = false }) =>
 
         if (foundOption) {
             setSelectedSort(foundOption);
+            lastSortRef.current = {
+                value: foundOption.value,
+                direction: foundOption.direction
+            };
         }
     }, [searchParams, sortBy, sortDir]);
 
-    const handleSortChange = (option: SortOption): void => {
-        // Don't do anything if this option is already selected
-        if (selectedSort.value === option.value && selectedSort.direction === option.direction) {
+    // Memoized sort change handler to prevent unnecessary rerenders
+    const handleSortChange = useCallback((option: SortOption): void => {
+        // Don't do anything if this option is already selected or currently sorting
+        if ((selectedSort.value === option.value &&
+                selectedSort.direction === option.direction) ||
+            isSorting ||
+            isLoading) {
             setIsOpen(false);
             return;
         }
 
-        setSelectedSort(option);
-        setIsOpen(false);
+        // Set flags to prevent additional updates
         setIsSorting(true);
+        isUpdatingRef.current = true;
 
-        // Update URL params
-        const params = new URLSearchParams(searchParams);
-        params.set('sortBy', option.value);
-        params.set('sortDir', option.direction);
-        setSearchParams(params);
+        // Update the last selected sort option
+        lastSortRef.current = {
+            value: option.value,
+            direction: option.direction
+        };
 
-        // Apply sort to product list using the hook
-        applyFilters({
-            sortBy: option.value,
-            sortDir: option.direction,
-            page: 0 // Reset to first page when changing sort
-        }).catch(err => {
-            console.error('Error applying sort:', err);
-        }).finally(() => {
-            setIsSorting(false);
-        });
-    };
+        // Close dropdown and set selected option immediately
+        setIsOpen(false);
+        setSelectedSort(option);
+
+        // Debounce the actual filtering and URL update
+        const applySort = async () => {
+            try {
+                // Apply sort to product list using the hook
+                await applyFilters({
+                    sortBy: option.value,
+                    sortDir: option.direction,
+                    page: 0 // Reset to first page when changing sort
+                });
+            } catch (err) {
+                console.error('Error applying sort:', err);
+            } finally {
+                // Allow updates again
+                setIsSorting(false);
+                isUpdatingRef.current = false;
+            }
+        };
+
+        // Use timeout to prevent UI flicker
+        setTimeout(applySort, 50);
+    }, [selectedSort, isSorting, isLoading, applyFilters]);
 
     return (
         <div className="relative inline-block text-left w-full" ref={dropdownRef}>
             <motion.button
                 type="button"
                 className={`inline-flex justify-between w-full rounded-lg border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2.5 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary dark:focus:ring-accent transition-colors duration-200 ${isLoading || isSorting ? 'opacity-75 cursor-wait' : ''}`}
-                onClick={() => setIsOpen(!isOpen)}
-                whileHover={{ backgroundColor: 'rgba(var(--color-primary), 0.05)' }}
+                onClick={() => {
+                    if (!isLoading && !isSorting) {
+                        setIsOpen(!isOpen);
+                    }
+                }}
+                whileHover={!isLoading && !isSorting ? { backgroundColor: 'rgba(var(--color-primary), 0.05)' } : {}}
                 initial={{ opacity: 0, y: 5 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3 }}
@@ -143,9 +179,9 @@ const ProductSorting: React.FC<ProductSortingProps> = ({ isLoading = false }) =>
             </motion.button>
 
             <AnimatePresence>
-                {isOpen && (
+                {isOpen && !isLoading && !isSorting && (
                     <motion.div
-                        className="origin-top-right absolute right-0 mt-2 w-full rounded-lg shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5 z-20 overflow-hidden"
+                        className="origin-top-right absolute right-0 mt-2 w-full rounded-lg shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5 z-50 overflow-hidden"
                         variants={dropdownVariants}
                         initial="hidden"
                         animate="visible"
@@ -188,4 +224,4 @@ const ProductSorting: React.FC<ProductSortingProps> = ({ isLoading = false }) =>
     );
 };
 
-export default ProductSorting;
+export default React.memo(ProductSorting);

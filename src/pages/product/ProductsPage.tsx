@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import {useNavigate, useSearchParams, useParams, Link} from 'react-router-dom';
+import { useNavigate, useSearchParams, useParams, Link } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiFilter, FiRefreshCw, FiChevronRight, FiGrid, FiList, FiArrowLeft, FiAlertCircle } from 'react-icons/fi';
@@ -11,7 +11,8 @@ import ProductSorting from '../../components/products/ProductSorting';
 import ProductPagination from '../../components/products/ProductPagination';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import EmptyState from '../../components/common/EmptyState';
-import { ProductFilterParams } from '../../types/product.types';
+import ProductQuickView from '../../components/products/ProductQuickView';
+import { ProductFilterParams, ProductResponseDTO } from '../../types/product.types';
 import { BrandDTO } from "../../types/brand.types.tsx";
 import { CategoryDTO } from "../../types/category.types.tsx";
 import AOS from 'aos';
@@ -23,12 +24,17 @@ const ProductsPage: React.FC = () => {
     const [searchParams] = useSearchParams();
     const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+    const [isSorting, setIsSorting] = useState(false);
     const initialLoadComplete = useRef(false);
     const lastSearchParams = useRef('');
     const scrollRef = useRef<HTMLDivElement>(null);
     const prevCategorySlug = useRef<string | undefined>(categorySlug);
     const prevBrandSlug = useRef<string | undefined>(brandSlug);
     const [allCategories, setAllCategories] = useState<CategoryDTO[]>([]);
+
+    // States for product quick view
+    const [selectedProduct, setSelectedProduct] = useState<ProductResponseDTO | null>(null);
+    const [isQuickViewOpen, setIsQuickViewOpen] = useState(false);
 
     const {
         products,
@@ -254,30 +260,35 @@ const ProductsPage: React.FC = () => {
             });
     }, [searchParams, applyFilters, categorySlug, brandSlug]);
 
-    // Update URL based on filters
+    // Update URL based on filters - throttled to prevent excessive updates
     useEffect(() => {
         if (!initialLoadComplete.current) return;
 
         // Skip URL updates if we're on a category or brand page
         if (categorySlug || brandSlug) return;
 
-        const params = new URLSearchParams();
-        if (currentPage > 0) params.set('page', currentPage.toString());
-        if (pageSize !== 12) params.set('size', pageSize.toString());
-        if (searchTerm) params.set('search', searchTerm);
-        if (selectedCategory) params.set('category', selectedCategory.toString());
-        if (selectedBrand) params.set('brand', selectedBrand.toString());
-        if (priceRange.min) params.set('minPrice', priceRange.min.toString());
-        if (priceRange.max) params.set('maxPrice', priceRange.max.toString());
-        if (sortBy !== 'createdAt') params.set('sortBy', sortBy);
-        if (sortDir !== 'desc') params.set('sortDir', sortDir);
+        // Use a timeout to batch URL updates
+        const updateUrlTimer = setTimeout(() => {
+            const params = new URLSearchParams();
+            if (currentPage > 0) params.set('page', currentPage.toString());
+            if (pageSize !== 12) params.set('size', pageSize.toString());
+            if (searchTerm) params.set('search', searchTerm);
+            if (selectedCategory) params.set('category', selectedCategory.toString());
+            if (selectedBrand) params.set('brand', selectedBrand.toString());
+            if (priceRange.min) params.set('minPrice', priceRange.min.toString());
+            if (priceRange.max) params.set('maxPrice', priceRange.max.toString());
+            if (sortBy !== 'createdAt') params.set('sortBy', sortBy);
+            if (sortDir !== 'desc') params.set('sortDir', sortDir);
 
-        const currentSearch = searchParams.toString();
-        const newSearch = params.toString();
-        if (currentSearch !== newSearch) {
-            lastSearchParams.current = newSearch;
-            navigate({ search: newSearch }, { replace: true });
-        }
+            const currentSearch = searchParams.toString();
+            const newSearch = params.toString();
+            if (currentSearch !== newSearch) {
+                lastSearchParams.current = newSearch;
+                navigate({ search: newSearch }, { replace: true });
+            }
+        }, 300); // Debounce URL updates
+
+        return () => clearTimeout(updateUrlTimer);
     }, [currentPage, pageSize, searchTerm, selectedCategory, selectedBrand, priceRange, sortBy, sortDir, navigate, searchParams, categorySlug, brandSlug]);
 
     // Scroll to top when changing page
@@ -310,7 +321,7 @@ const ProductsPage: React.FC = () => {
         });
     }, [resetFilters, navigate, categorySlug, brandSlug]);
 
-    // Handle filter changes
+    // Handle filter changes - with debouncing to prevent excessive updates
     const handleFilterChange = useCallback((filters: {
         categoryId?: number | null;
         brandId?: number | null;
@@ -354,17 +365,44 @@ const ProductsPage: React.FC = () => {
         if (sortBy) filterParams.sortBy = sortBy;
         if (sortDir) filterParams.sortDir = sortDir;
 
-        applyFilters(filterParams).catch((err) => {
-            console.error('Error applying filters:', err);
-            toast.error('Đã xảy ra lỗi khi lọc sản phẩm', {
-                icon: <FiAlertCircle className="text-red-500" />,
-            });
-        });
+        // Apply filters with debouncing
+        setIsSorting(true);
+        const applyFilterTimer = setTimeout(() => {
+            applyFilters(filterParams)
+                .catch((err) => {
+                    console.error('Error applying filters:', err);
+                    toast.error('Đã xảy ra lỗi khi lọc sản phẩm', {
+                        icon: <FiAlertCircle className="text-red-500" />,
+                    });
+                })
+                .finally(() => {
+                    setIsSorting(false);
+                });
+        }, 50);
+
+        return () => clearTimeout(applyFilterTimer);
     }, [applyFilters, sortBy, sortDir]);
 
     // Handle view mode change
     const handleViewModeChange = useCallback((mode: 'grid' | 'list') => {
         setViewMode(mode);
+    }, []);
+
+    // Handle opening product quick view
+    const handleOpenQuickView = useCallback((product: ProductResponseDTO) => {
+        console.log("Opening quick view for product:", product);
+        setSelectedProduct(product);
+        setIsQuickViewOpen(true);
+    }, []);
+
+    // Handle closing product quick view
+    const handleCloseQuickView = useCallback(() => {
+        console.log("Closing quick view");
+        setIsQuickViewOpen(false);
+        // Optionally clear the selected product after animation completes
+        setTimeout(() => {
+            setSelectedProduct(null);
+        }, 300);
     }, []);
 
     if (loading && products.length === 0) {
@@ -376,12 +414,21 @@ const ProductsPage: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen">
+        <div className="min-h-screen relative">
+            {/* Product Quick View Modal */}
+            {selectedProduct && (
+                <ProductQuickView
+                    product={selectedProduct}
+                    isOpen={isQuickViewOpen}
+                    onClose={handleCloseQuickView}
+                />
+            )}
+
             <AnimatePresence>
                 {mobileFiltersOpen && (
                     <>
                         <motion.div
-                            className="lg:hidden fixed inset-0 z-50 bg-black bg-opacity-60"
+                            className="lg:hidden fixed inset-0 z-[9990] bg-black bg-opacity-60"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
@@ -389,7 +436,7 @@ const ProductsPage: React.FC = () => {
                             onClick={() => setMobileFiltersOpen(false)}
                         />
                         <motion.div
-                            className="lg:hidden fixed inset-y-0 left-0 z-50 w-full max-w-xs bg-white dark:bg-gray-800 shadow-xl"
+                            className="lg:hidden fixed inset-y-0 left-0 z-[9991] w-full max-w-xs bg-white dark:bg-gray-800 shadow-xl"
                             initial={{ x: "-100%" }}
                             animate={{ x: 0 }}
                             exit={{ x: "-100%" }}
@@ -431,6 +478,7 @@ const ProductsPage: React.FC = () => {
                                     categories={activeParentCategories || []}
                                     brands={activeBrands || []}
                                     allCategories={allCategories}
+                                    isLoading={loading || isSorting}
                                 />
                             </div>
                         </motion.div>
@@ -518,6 +566,7 @@ const ProductsPage: React.FC = () => {
                                 categories={activeParentCategories || []}
                                 brands={activeBrands || []}
                                 allCategories={allCategories}
+                                isLoading={loading || isSorting}
                             />
                         </div>
 
@@ -532,10 +581,11 @@ const ProductsPage: React.FC = () => {
                                 <div className="lg:hidden">
                                     <motion.button
                                         type="button"
-                                        className="inline-flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow-md hover:bg-primary/90 dark:bg-accent dark:hover:bg-accent/90 transition-all duration-200"
+                                        className="inline-flex items-center px-4 py-2 bg-primary text-white rounded-lg shadow-md hover:bg-primary/90 dark:bg-accent dark:hover:bg-accent/90 transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
                                         onClick={() => setMobileFiltersOpen(true)}
                                         whileHover={{ scale: 1.05 }}
                                         whileTap={{ scale: 0.95 }}
+                                        disabled={loading || isSorting}
                                     >
                                         <FiFilter className="mr-2 h-5 w-5" />
                                         Bộ lọc
@@ -552,9 +602,10 @@ const ProductsPage: React.FC = () => {
                                                 viewMode === 'grid'
                                                     ? 'bg-primary text-white shadow-inner'
                                                     : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                                            } transition-all duration-200 ease-in-out`}
+                                            } transition-all duration-200 ease-in-out disabled:opacity-70 disabled:cursor-not-allowed`}
                                             onClick={() => handleViewModeChange('grid')}
                                             title="Chế độ lưới"
+                                            disabled={loading || isSorting}
                                         >
                                             <FiGrid className="h-5 w-5" />
                                         </button>
@@ -564,9 +615,10 @@ const ProductsPage: React.FC = () => {
                                                 viewMode === 'list'
                                                     ? 'bg-primary text-white shadow-inner'
                                                     : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                                            } transition-all duration-200 ease-in-out`}
+                                            } transition-all duration-200 ease-in-out disabled:opacity-70 disabled:cursor-not-allowed`}
                                             onClick={() => handleViewModeChange('list')}
                                             title="Chế độ danh sách"
+                                            disabled={loading || isSorting}
                                         >
                                             <FiList className="h-5 w-5" />
                                         </button>
@@ -575,19 +627,20 @@ const ProductsPage: React.FC = () => {
                                     {/* Reset filters button */}
                                     <motion.button
                                         type="button"
-                                        className="inline-flex items-center p-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200"
+                                        className="inline-flex items-center p-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
                                         onClick={handleFilterReset}
                                         whileHover={{ scale: 1.05 }}
                                         whileTap={{ scale: 0.95 }}
                                         title="Đặt lại bộ lọc"
+                                        disabled={loading || isSorting}
                                     >
-                                        <FiRefreshCw className="h-5 w-5" />
+                                        <FiRefreshCw className={`h-5 w-5 ${loading || isSorting ? 'animate-spin' : ''}`} />
                                     </motion.button>
                                 </div>
 
                                 {/* Sorting */}
                                 <div className="w-full sm:w-auto">
-                                    <ProductSorting />
+                                    <ProductSorting isLoading={loading || isSorting} />
                                 </div>
                             </div>
 
@@ -603,7 +656,7 @@ const ProductsPage: React.FC = () => {
                             )}
 
                             {/* Product Content */}
-                            {loading ? (
+                            {loading || isSorting ? (
                                 <div className="flex justify-center items-center py-16">
                                     <motion.div
                                         initial={{ opacity: 0, scale: 0.8 }}
@@ -612,7 +665,9 @@ const ProductsPage: React.FC = () => {
                                         className="text-center"
                                     >
                                         <LoadingSpinner size="large" />
-                                        <p className="mt-4 text-gray-500 dark:text-gray-400">Đang tải sản phẩm...</p>
+                                        <p className="mt-4 text-gray-500 dark:text-gray-400">
+                                            {isSorting ? 'Đang sắp xếp sản phẩm...' : 'Đang tải sản phẩm...'}
+                                        </p>
                                     </motion.div>
                                 </div>
                             ) : error ? (
@@ -633,11 +688,12 @@ const ProductsPage: React.FC = () => {
                                     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-inner border border-gray-100 dark:border-gray-700 p-4">
                                         <ProductGrid
                                             products={products}
-                                            loading={loading}
+                                            loading={loading || isSorting}
                                             viewMode={viewMode}
                                             onViewModeChange={handleViewModeChange}
                                             categories={activeParentCategories || []}
                                             brands={activeBrands || []}
+                                            onOpenQuickView={handleOpenQuickView}
                                         />
                                     </div>
 
@@ -678,4 +734,4 @@ const ProductsPage: React.FC = () => {
     );
 };
 
-export default ProductsPage;
+export default React.memo(ProductsPage);
