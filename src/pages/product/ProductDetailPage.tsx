@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -10,6 +10,7 @@ import EmptyState from '../../components/common/EmptyState';
 import ProductImages from '../../components/product-detail/ProductImages';
 import ProductInfo from '../../components/product-detail/ProductInfo';
 import ProductOptions from '../../components/product-detail/ProductOptions';
+import ProductReviews from '../../components/product-detail/ProductReviews';
 import RelatedProducts from '../../components/product-detail/RelatedProducts';
 import AOS from 'aos';
 import 'aos/dist/aos.css';
@@ -28,6 +29,9 @@ const ProductDetailPage: React.FC = () => {
     const [hasFetched, setHasFetched] = useState<boolean>(false);
     const [showAlert, setShowAlert] = useState<boolean>(false);
 
+    // Create a ref to track if component is mounted
+    const isMounted = useRef<boolean>(true);
+
     const {
         selectedProduct,
         productImages,
@@ -42,6 +46,7 @@ const ProductDetailPage: React.FC = () => {
 
     const { addItemToUserCart, getUserCart } = useCart();
 
+    // Initialize AOS animation library
     useEffect(() => {
         AOS.init({
             duration: 800,
@@ -50,39 +55,73 @@ const ProductDetailPage: React.FC = () => {
             easing: 'ease-out-cubic',
             delay: 50
         });
-        return () => AOS.refresh();
+
+        // Cleanup function to avoid memory leaks
+        return () => {
+            AOS.refresh();
+            // Mark component as unmounted to prevent state updates after unmounting
+            isMounted.current = false;
+        };
     }, []);
 
+    // Fetch product data once
     useEffect(() => {
         if (!slug || hasFetched) return;
+
         const fetchData = async () => {
             try {
                 await getProductBySlug(slug);
+
+                // Only fetch cart if user is authenticated
                 if (isAuthenticated) await getUserCart();
-                setHasFetched(true);
+
+                // Only update state if component is still mounted
+                if (isMounted.current) {
+                    setHasFetched(true);
+                }
             } catch (err) {
                 console.error('Error fetching product:', err);
-                toast.error('Không thể tải thông tin sản phẩm', {
-                    icon: <FiAlertCircle className="text-red-500" />,
-                });
-                setHasFetched(false);
+
+                // Only show toast and update state if component is still mounted
+                if (isMounted.current) {
+                    toast.error('Không thể tải thông tin sản phẩm', {
+                        icon: <FiAlertCircle className="text-red-500" />,
+                    });
+                    setHasFetched(false);
+                }
             }
         };
-        fetchData();
-    }, [slug, getProductBySlug, getUserCart, isAuthenticated, hasFetched]);
 
+        fetchData();
+
+        // Cleanup function
+        return () => {
+            // Reset hasFetched when slug changes or component unmounts
+            setHasFetched(false);
+        };
+    }, [slug, getProductBySlug, getUserCart, isAuthenticated]);
+
+    // Collect all available product images
     const images: string[] = useMemo(() => {
         if (!selectedProduct) return [];
-        const imageList: string[] = [selectedProduct.thumbnail].filter((url): url is string => url !== null && url !== undefined) as string[];
+
+        const imageList: string[] = [selectedProduct.thumbnail].filter((url): url is string =>
+            url !== null && url !== undefined
+        ) as string[];
+
         productImages.forEach((img: ProductImageDTO) => {
             if (!imageList.includes(img.imageUrl)) imageList.push(img.imageUrl);
         });
+
         productVariants.forEach((variant: ProductVariantDTO) => {
-            if (variant.imageUrl && !imageList.includes(variant.imageUrl)) imageList.push(variant.imageUrl);
+            if (variant.imageUrl && !imageList.includes(variant.imageUrl))
+                imageList.push(variant.imageUrl);
         });
+
         return imageList;
     }, [selectedProduct, productImages, productVariants]);
 
+    // Set active image index when images change
     useEffect(() => {
         if (images.length > 0) {
             const primaryImageIndex = productImages.findIndex((img: ProductImageDTO) => img.isPrimary);
@@ -90,23 +129,39 @@ const ProductDetailPage: React.FC = () => {
         }
     }, [images, productImages]);
 
+    // Find active variant based on selection
     const activeVariant: ProductVariantDTO | null = useMemo(() => {
         if (!selectedSize || !selectedColor) return null;
+
         return (
             productVariants.find(
-                (v: ProductVariantDTO) => v.size === selectedSize && v.color === selectedColor && v.stockQuantity > 0 && v.status
+                (v: ProductVariantDTO) =>
+                    v.size === selectedSize &&
+                    v.color === selectedColor &&
+                    v.stockQuantity > 0 &&
+                    v.status
             ) || null
         );
     }, [selectedSize, selectedColor, productVariants]);
 
+    // Set default size and color when available options change
     useEffect(() => {
-        if (availableSizes.length > 0 && !selectedSize) setSelectedSize(availableSizes[0]);
-        if (availableColors.length > 0 && !selectedColor) setSelectedColor(availableColors[0]);
-    }, [availableSizes, availableColors]);
+        if (availableSizes.length > 0 && !selectedSize)
+            setSelectedSize(availableSizes[0]);
 
+        if (availableColors.length > 0 && !selectedColor)
+            setSelectedColor(availableColors[0]);
+    }, [availableSizes, availableColors, selectedSize, selectedColor]);
+
+    // Update quantity and image when active variant changes
     useEffect(() => {
         if (activeVariant) {
-            setQuantity((prev) => (prev > activeVariant.stockQuantity ? activeVariant.stockQuantity : prev));
+            // Ensure quantity doesn't exceed stock
+            setQuantity((prev) =>
+                (prev > activeVariant.stockQuantity ? activeVariant.stockQuantity : prev)
+            );
+
+            // Show variant image if available
             if (activeVariant.imageUrl) {
                 const variantImageIndex = images.findIndex((img) => img === activeVariant.imageUrl);
                 if (variantImageIndex >= 0) setActiveImageIndex(variantImageIndex);
@@ -114,13 +169,22 @@ const ProductDetailPage: React.FC = () => {
         }
     }, [activeVariant, images]);
 
+    // Check if selected variant is available
     const isVariantAvailable = (): boolean =>
         !!selectedSize &&
         !!selectedColor &&
-        !!productVariants.some((v: ProductVariantDTO) => v.size === selectedSize && v.color === selectedColor && v.stockQuantity > 0 && v.status);
+        !!productVariants.some(
+            (v: ProductVariantDTO) =>
+                v.size === selectedSize &&
+                v.color === selectedColor &&
+                v.stockQuantity > 0 &&
+                v.status
+        );
 
+    // Handle add to cart
     const handleAddToCart = async () => {
         if (!selectedProduct || !activeVariant) return;
+
         if (!isAuthenticated) {
             toast.error('Vui lòng đăng nhập để thêm sản phẩm vào giỏ hàng!', {
                 icon: <FiAlertCircle className="text-red-500" />,
@@ -128,14 +192,24 @@ const ProductDetailPage: React.FC = () => {
             navigate('/login');
             return;
         }
+
         if (!isVariantAvailable()) {
             setShowAlert(true);
-            setTimeout(() => setShowAlert(false), 5000);
+            setTimeout(() => {
+                if (isMounted.current) {
+                    setShowAlert(false);
+                }
+            }, 5000);
             return;
         }
+
         try {
-            const cartItem: CartAddItemDTO = { variantId: activeVariant.variantId ?? 0, quantity };
+            const cartItem: CartAddItemDTO = {
+                variantId: activeVariant.variantId ?? 0,
+                quantity
+            };
             await addItemToUserCart(cartItem);
+
             toast.success(`Đã thêm ${quantity} ${selectedProduct.name} vào giỏ hàng`, {
                 icon: <FiShoppingCart className="text-green-500" />,
             });
@@ -147,22 +221,35 @@ const ProductDetailPage: React.FC = () => {
         }
     };
 
+    // Handle add to wishlist
     const handleAddToWishlist = () => {
         if (!selectedProduct) return;
+
         toast.success(`Đã thêm ${selectedProduct.name} vào danh sách yêu thích`, {
             icon: <FiHeart className="text-red-500" />,
         });
     };
 
+    // Format price with Vietnamese currency
     const formatPrice = (price: number): string =>
-        new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(price);
+        new Intl.NumberFormat('vi-VN', {
+            style: 'currency',
+            currency: 'VND',
+            maximumFractionDigits: 0
+        }).format(price);
 
+    // Calculate discount percentage
     const calculateDiscount: number | null = useMemo(() => {
-        if (!selectedProduct?.salePrice || selectedProduct.salePrice === null) return null;
+        if (!selectedProduct?.salePrice || selectedProduct.salePrice === null)
+            return null;
+
         const salePrice = selectedProduct.salePrice ?? 0;
-        return Math.round(((selectedProduct.price - salePrice) / selectedProduct.price) * 100);
+        return Math.round(
+            ((selectedProduct.price - salePrice) / selectedProduct.price) * 100
+        );
     }, [selectedProduct]);
 
+    // Show loading spinner while product is loading
     if (loading && !selectedProduct) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -171,6 +258,7 @@ const ProductDetailPage: React.FC = () => {
         );
     }
 
+    // Show error state if product not found
     if (error || !selectedProduct) {
         return (
             <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-16">
@@ -186,7 +274,7 @@ const ProductDetailPage: React.FC = () => {
     }
 
     return (
-        <div className="min-h-screen ">
+        <div className="min-h-screen">
             <AnimatePresence>
                 {showAlert && (
                     <motion.div
@@ -252,7 +340,6 @@ const ProductDetailPage: React.FC = () => {
                     className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden"
                     data-aos="fade-up"
                 >
-
                     <div className="flex flex-col lg:flex-row">
                         {/* Product Images */}
                         <div
@@ -311,6 +398,22 @@ const ProductDetailPage: React.FC = () => {
                     <ProductInfo
                         product={selectedProduct}
                         formatPrice={formatPrice}
+                    />
+                </motion.div>
+
+                {/* Product Reviews Section */}
+                <motion.div
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6, delay: 0.35 }}
+                    data-aos="fade-up"
+                    data-aos-delay="250"
+                >
+                    {/* Pass a key to force ProductReviews to remount when product changes */}
+                    <ProductReviews
+                        key={`review-${selectedProduct.productId}`}
+                        productId={selectedProduct.productId}
+                        productName={selectedProduct.name}
                     />
                 </motion.div>
 

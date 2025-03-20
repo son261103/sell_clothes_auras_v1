@@ -53,8 +53,12 @@ let isRefreshing = false;
 let failedQueue: { resolve: (value: unknown) => void; reject: (reason?: Error | null) => void }[] = [];
 // Last successful refresh timestamp
 let lastRefreshTime = 0;
-// Minimum interval between refreshes (5 seconds)
-const MIN_REFRESH_INTERVAL = 5000;
+// Minimum interval between refreshes (2 seconds)
+const MIN_REFRESH_INTERVAL = 2000;
+// Track if we're redirecting to login to prevent multiple redirects
+let isRedirectingToLogin = false;
+// Track if we've checked authentication on startup
+let hasCheckedAuthOnStartup = false;
 
 // Process failed queue (retry requests with new token or reject all)
 const processQueue = (error: Error | null, token: string | null = null) => {
@@ -88,7 +92,6 @@ const getRefreshToken = (): string | null => {
 const getEmailFromToken = (token: string): string | null => {
     try {
         const decoded: TokenPayload = jwtDecode(token);
-        console.log('Giải mã token:', decoded);
         return decoded.email || null;
     } catch (error) {
         console.log('Lỗi khi giải mã token:', error);
@@ -96,7 +99,7 @@ const getEmailFromToken = (token: string): string | null => {
     }
 };
 
-// Check if token is expired or about to expire (buffer period of 2 minutes)
+// Check if token is expired or about to expire (buffer period of 30 seconds)
 const isTokenExpired = (token: string): boolean => {
     if (!token) {
         return true;
@@ -104,8 +107,8 @@ const isTokenExpired = (token: string): boolean => {
 
     try {
         const decoded: TokenPayload = jwtDecode(token);
-        // Check if token will expire in the next 2 minutes (120 seconds)
-        return decoded.exp * 1000 < Date.now() + 120000;
+        // Check if token will expire in the next 30 seconds
+        return decoded.exp * 1000 < Date.now() + 30000;
     } catch (error) {
         console.error('Error decoding token:', error);
         return true;
@@ -144,6 +147,14 @@ const detectUserStatus = (error: AxiosError<ApiResponse>): UserStatus | null => 
 const fixMalformedJson = (data: string): unknown => {
     if (!data || typeof data !== 'string') {
         return data;
+    }
+
+    // Try to parse normally first
+    try {
+        return JSON.parse(data);
+    } catch (e) {
+        console.log(e)
+        // Continue with fixes if normal parsing fails
     }
 
     // Trường hợp 1: Chuỗi JSON không hợp lệ do nối nhiều đối tượng
@@ -268,8 +279,8 @@ const fixMalformedJson = (data: string): unknown => {
     return data;
 };
 
-// Improved token refresh function
-const refreshAccessToken = async (): Promise<string> => {
+// Improved token refresh function with retry and backoff
+const refreshAccessToken = async (retries = 3, backoff = 300): Promise<string> => {
     const now = Date.now();
     if (now - lastRefreshTime < MIN_REFRESH_INTERVAL) {
         console.log('Skipping refresh - too soon since last refresh');
@@ -305,7 +316,13 @@ const refreshAccessToken = async (): Promise<string> => {
 
         return newTokens.accessToken;
     } catch (error) {
-        console.error('Token refresh failed:', error);
+        if (retries > 0) {
+            // Wait using backoff strategy before retrying
+            await new Promise(resolve => setTimeout(resolve, backoff));
+            return refreshAccessToken(retries - 1, backoff * 2);
+        }
+
+        console.error('Token refresh failed after retries:', error);
         // Clear tokens on refresh failure
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshTokenBackup');
@@ -314,71 +331,77 @@ const refreshAccessToken = async (): Promise<string> => {
     }
 };
 
+// Improved token refresh handler with better error handling
 const handleTokenRefresh = async (error: AxiosError<ApiResponse>, apiInstance: AxiosInstance) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    // Không thử refresh token cho lỗi đăng nhập/đăng ký
-    if (originalRequest?.url?.includes('/auth/login') || originalRequest?.url?.includes('/auth/register')) {
+    // Skip token refresh for login/register/refresh-token requests
+    if (originalRequest?.url?.includes('/auth/login') ||
+        originalRequest?.url?.includes('/auth/register') ||
+        originalRequest?.url?.includes('/auth/refresh-token')) {
         return Promise.reject(error);
     }
 
-    // Chỉ thử refresh token khi lỗi 401 và chưa retry
+    // Only try refreshing token for 401 errors and only once per request
     if (error.response?.status === 401 && !originalRequest._retry) {
         originalRequest._retry = true;
 
-        // Kiểm tra trạng thái người dùng từ lỗi trả về
+        // Check user status from error response
         const userStatus = detectUserStatus(error);
 
-        // Xử lý các trường hợp đặc biệt của user status
+        // Handle special user status cases
         if (userStatus === UserStatus.PENDING) {
+            // For pending accounts, save email and redirect to activation page
             const token = localStorage.getItem('accessToken');
             if (token) {
                 const email = getEmailFromToken(token);
                 if (email) {
-                    console.log('Tìm thấy email từ token:', email);
                     localStorage.setItem('pendingActivationEmail', email);
-                } else {
-                    console.log('Không tìm thấy email trong token');
                 }
             }
 
-            toast('Tài khoản của bạn chưa được kích hoạt. Vui lòng xác thực email.', {
-                icon: '⚠️',
-                style: {
-                    borderRadius: '10px',
-                    background: '#FFF9C4',
-                    color: '#F57F17',
-                },
-            });
-
+            // Only toast and redirect if not already on activation page
             if (!window.location.pathname.includes('/activate-account')) {
+                toast('Tài khoản của bạn chưa được kích hoạt. Vui lòng xác thực email.', {
+                    icon: '⚠️',
+                    style: {
+                        borderRadius: '10px',
+                        background: '#FFF9C4',
+                        color: '#F57F17',
+                    },
+                });
                 window.location.href = '/activate-account';
             }
-
             return Promise.reject(error);
         } else if (userStatus === UserStatus.BANNER) {
+            // For banned accounts, clear auth and redirect to login
             toast.error('Tài khoản của bạn đã bị khóa vĩnh viễn. Vui lòng liên hệ admin.');
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshTokenBackup');
             document.cookie = 'refreshToken=; Max-Age=0; path=/;';
             store.dispatch(logout());
-            if (!window.location.pathname.includes('/login')) {
+
+            if (!window.location.pathname.includes('/login') && !isRedirectingToLogin) {
+                isRedirectingToLogin = true;
                 window.location.href = '/login';
             }
             return Promise.reject(error);
         } else if (userStatus === UserStatus.LOCKED) {
+            // For locked accounts, clear auth and redirect to login
             toast.error('Tài khoản của bạn đã bị tạm khóa. Vui lòng thử lại sau.');
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshTokenBackup');
             document.cookie = 'refreshToken=; Max-Age=0; path=/;';
             store.dispatch(logout());
-            if (!window.location.pathname.includes('/login')) {
+
+            if (!window.location.pathname.includes('/login') && !isRedirectingToLogin) {
+                isRedirectingToLogin = true;
                 window.location.href = '/login';
             }
             return Promise.reject(error);
         }
 
-        // Nếu đang refresh token, đặt request vào queue
+        // If already refreshing, queue this request
         if (isRefreshing) {
             return new Promise<string | unknown>((resolve, reject) => {
                 failedQueue.push({resolve, reject});
@@ -397,63 +420,70 @@ const handleTokenRefresh = async (error: AxiosError<ApiResponse>, apiInstance: A
         isRefreshing = true;
 
         try {
-            // Kiểm tra xem có token không
+            // Check for tokens
             const accessToken = localStorage.getItem('accessToken');
             const refreshToken = getRefreshToken();
 
             if (!accessToken && !refreshToken) {
-                // Nếu không có token nào, chuyển hướng đến trang đăng nhập
+                // No tokens available, redirect to login if not already there
                 isRefreshing = false;
                 processQueue(new Error('No tokens available'));
                 store.dispatch(logout());
 
-                toast('Vui lòng đăng nhập để tiếp tục', {
-                    icon: '⚠️',
-                    style: {
-                        borderRadius: '10px',
-                        background: '#FFF9C4',
-                        color: '#F57F17',
-                    },
-                });
-
-                if (!window.location.pathname.includes('/login')) {
+                if (!window.location.pathname.includes('/login') && !isRedirectingToLogin) {
+                    isRedirectingToLogin = true;
+                    toast('Vui lòng đăng nhập để tiếp tục', {
+                        icon: '⚠️',
+                        style: {
+                            borderRadius: '10px',
+                            background: '#FFF9C4',
+                            color: '#F57F17',
+                        },
+                    });
                     window.location.href = '/login';
                 }
-
                 return Promise.reject(error);
             }
 
+            // Try to refresh the token with retry logic
             const newToken = await refreshAccessToken();
 
+            // Update authorization header with new token
             if (originalRequest.headers) {
                 originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
             }
 
+            // Process any queued requests with the new token
             processQueue(null, newToken);
             isRefreshing = false;
+
+            // Retry the original request with the new token
             return apiInstance(originalRequest);
         } catch (refreshError) {
             console.error('Token refresh failed during request:', refreshError);
             const typedError = refreshError as AxiosError<ApiResponse>;
             const userStatus = detectUserStatus(typedError);
 
+            // Process queued requests with the error
             processQueue(new Error('Token refresh failed'));
             isRefreshing = false;
 
+            // Handle specific error cases
             if (userStatus === UserStatus.PENDING) {
                 const email = typedError.response?.data?.email;
                 if (email) {
                     localStorage.setItem('pendingActivationEmail', email);
                 }
-                toast('Tài khoản của bạn chưa được kích hoạt. Vui lòng xác thực email.', {
-                    icon: '⚠️',
-                    style: {
-                        borderRadius: '10px',
-                        background: '#FFF9C4',
-                        color: '#F57F17',
-                    },
-                });
+
                 if (!window.location.pathname.includes('/activate-account')) {
+                    toast('Tài khoản của bạn chưa được kích hoạt. Vui lòng xác thực email.', {
+                        icon: '⚠️',
+                        style: {
+                            borderRadius: '10px',
+                            background: '#FFF9C4',
+                            color: '#F57F17',
+                        },
+                    });
                     window.location.href = '/activate-account';
                 }
             } else if (userStatus === UserStatus.BANNER) {
@@ -462,7 +492,9 @@ const handleTokenRefresh = async (error: AxiosError<ApiResponse>, apiInstance: A
                 localStorage.removeItem('refreshTokenBackup');
                 document.cookie = 'refreshToken=; Max-Age=0; path=/;';
                 store.dispatch(logout());
-                if (!window.location.pathname.includes('/login')) {
+
+                if (!window.location.pathname.includes('/login') && !isRedirectingToLogin) {
+                    isRedirectingToLogin = true;
                     window.location.href = '/login';
                 }
             } else if (userStatus === UserStatus.LOCKED) {
@@ -471,34 +503,33 @@ const handleTokenRefresh = async (error: AxiosError<ApiResponse>, apiInstance: A
                 localStorage.removeItem('refreshTokenBackup');
                 document.cookie = 'refreshToken=; Max-Age=0; path=/;';
                 store.dispatch(logout());
-                if (!window.location.pathname.includes('/login')) {
+
+                if (!window.location.pathname.includes('/login') && !isRedirectingToLogin) {
+                    isRedirectingToLogin = true;
                     window.location.href = '/login';
                 }
             } else {
-                // Sửa lại phần này để không chuyển đến trang OTP không tồn tại
-                // Thay vào đó, luôn chuyển đến trang đăng nhập
+                // Generic token error - only redirect to login if needed
                 const email = typedError.response?.data?.email;
                 if (email) {
                     localStorage.setItem('loginEmail', email);
                 }
 
-                // Luôn cập nhật state Redux và xóa token
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshTokenBackup');
                 document.cookie = 'refreshToken=; Max-Age=0; path=/;';
                 store.dispatch(logout());
 
-                toast('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.', {
-                    icon: '⚠️',
-                    style: {
-                        borderRadius: '10px',
-                        background: '#FFF9C4',
-                        color: '#F57F17',
-                    },
-                });
-
-                // Chỉ chuyển hướng nếu chưa ở trang login
-                if (!window.location.pathname.includes('/login')) {
+                if (!window.location.pathname.includes('/login') && !isRedirectingToLogin) {
+                    isRedirectingToLogin = true;
+                    toast('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.', {
+                        icon: '⚠️',
+                        style: {
+                            borderRadius: '10px',
+                            background: '#FFF9C4',
+                            color: '#F57F17',
+                        },
+                    });
                     window.location.href = '/login';
                 }
             }
@@ -510,12 +541,11 @@ const handleTokenRefresh = async (error: AxiosError<ApiResponse>, apiInstance: A
     return Promise.reject(error);
 };
 
-// Xử lý response để sửa lỗi JSON
+// Enhanced response handler to fix malformed JSON
 const responseHandler = (response: AxiosResponse): AxiosResponse => {
-    // Chỉ xử lý nếu response.data tồn tại và là chuỗi
     if (response.data && typeof response.data === 'string') {
         try {
-            // Nếu chuỗi có dấu hiệu là JSON không hợp lệ
+            // Check for signs of malformed JSON
             if (
                 response.data.includes('}{') ||
                 response.data.includes('][') ||
@@ -523,16 +553,15 @@ const responseHandler = (response: AxiosResponse): AxiosResponse => {
                 (response.data.startsWith('{') && !response.data.endsWith('}')) ||
                 (response.data.startsWith('[') && !response.data.endsWith(']'))
             ) {
-                console.warn('Phát hiện phản hồi JSON bị lỗi, đang cố gắng sửa');
+                console.warn('Detected malformed JSON response, attempting to fix');
                 const fixedData = fixMalformedJson(response.data);
 
-                // Chỉ cập nhật nếu dữ liệu đã được sửa thành công
                 if (fixedData !== response.data) {
-                    console.log('Đã sửa thành công phản hồi JSON');
+                    console.log('Successfully fixed malformed JSON response');
                     response.data = fixedData;
                 }
             } else {
-                // Thử parse dữ liệu nếu nó có vẻ là JSON hợp lệ
+                // Try to parse valid-looking JSON
                 if (
                     (response.data.startsWith('{') && response.data.endsWith('}')) ||
                     (response.data.startsWith('[') && response.data.endsWith(']'))
@@ -540,7 +569,7 @@ const responseHandler = (response: AxiosResponse): AxiosResponse => {
                     try {
                         response.data = JSON.parse(response.data);
                     } catch {
-                        console.warn('Không thể parse JSON mặc dù có vẻ hợp lệ, thử sửa lỗi');
+                        console.warn('Failed to parse seemingly valid JSON, attempting fixes');
                         const fixedData = fixMalformedJson(response.data);
                         if (fixedData !== response.data) {
                             response.data = fixedData;
@@ -549,154 +578,148 @@ const responseHandler = (response: AxiosResponse): AxiosResponse => {
                 }
             }
         } catch (e) {
-            console.error('Không thể sửa phản hồi JSON bị lỗi:', e);
+            console.error('Failed to fix malformed JSON response:', e);
         }
     }
 
     return response;
 };
 
-// Apply interceptors with improved token refresh logic
+// Improved request interceptor for authApi
 authApi.interceptors.request.use(async (config) => {
-    // Skip token check for refresh token requests
-    if (config.url?.includes('/auth/refresh-token')) {
-        return config;
-    }
-
-    // Skip token check for login and register requests
-    if (config.url?.includes('/auth/login') || config.url?.includes('/auth/register')) {
+    // Skip token checks for specific auth endpoints
+    if (config.url?.includes('/auth/refresh-token') ||
+        config.url?.includes('/auth/login') ||
+        config.url?.includes('/auth/register')) {
         return config;
     }
 
     const token = localStorage.getItem('accessToken');
 
-    // If token exists but is about to expire, refresh it proactively
+    // Proactively refresh token if it's expired or about to expire
     if (token && isTokenExpired(token)) {
-        try {
-            console.log('Token about to expire, refreshing proactively');
+        console.log('Token expired or about to expire, refreshing proactively');
 
-            // Check if we're already refreshing
-            if (!isRefreshing) {
-                isRefreshing = true;
+        // Check if we're already refreshing
+        if (!isRefreshing) {
+            isRefreshing = true;
 
-                try {
-                    const newToken = await refreshAccessToken();
+            try {
+                const newToken = await refreshAccessToken();
 
-                    // Update the current request with the new token
-                    if (config.headers) {
-                        config.headers['Authorization'] = `Bearer ${newToken}`;
-                    }
-
-                    isRefreshing = false;
-                } catch (refreshError) {
-                    console.error('Proactive token refresh failed:', refreshError);
-                    isRefreshing = false;
-
-                    // Let the request proceed with the old token
-                    // The response interceptor will handle the 401 if needed
-                }
-            } else {
-                // Another request is already refreshing, wait for it to complete
-                console.log('Another request is already refreshing token, waiting...');
-                await new Promise<void>((resolve) => {
-                    const checkInterval = setInterval(() => {
-                        if (!isRefreshing) {
-                            clearInterval(checkInterval);
-                            resolve();
-                        }
-                    }, 100);
-                });
-
-                // Get the new token after refresh completes
-                const newToken = localStorage.getItem('accessToken');
-                if (newToken && config.headers) {
+                // Update the current request with the new token
+                if (config.headers) {
                     config.headers['Authorization'] = `Bearer ${newToken}`;
                 }
+
+                isRefreshing = false;
+            } catch (refreshError) {
+                console.error('Proactive token refresh failed:', refreshError);
+                isRefreshing = false;
+
+                // Let the request proceed with the old token
+                // The response interceptor will handle the 401 if needed
             }
-        } catch (error) {
-            console.error('Error in token refresh flow:', error);
-            // Will proceed with old token or no token
+        } else {
+            // Wait for ongoing refresh to complete
+            console.log('Another request is already refreshing token, waiting...');
+            await new Promise<void>((resolve) => {
+                const checkInterval = setInterval(() => {
+                    if (!isRefreshing) {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 100);
+
+                // Set a timeout to prevent infinite waiting
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    resolve();
+                }, 5000);
+            });
+
+            // Get the new token after refresh completes
+            const newToken = localStorage.getItem('accessToken');
+            if (newToken && config.headers) {
+                config.headers['Authorization'] = `Bearer ${newToken}`;
+            }
         }
     }
 
-    // Continue with adding the token to the request
+    // Add token to request
     return addAuthToken(config);
 }, (error) => Promise.reject(error));
 
+// Improved request interceptor for publicApi
 publicApi.interceptors.request.use(async (config) => {
-    // Đối với các route public, chỉ thêm token nếu có, không cần refresh
+    // For public routes, just add token if available without refresh
     if (config.url?.includes('/public/')) {
         return addAuthToken(config);
     }
 
-    // Skip token check for refresh token requests
-    if (config.url?.includes('/auth/refresh-token')) {
+    // Skip token check for auth endpoints
+    if (config.url?.includes('/auth/refresh-token') ||
+        config.url?.includes('/auth/login') ||
+        config.url?.includes('/auth/register')) {
         return config;
     }
 
-    // Skip token check for login and register requests
-    if (config.url?.includes('/auth/login') || config.url?.includes('/auth/register')) {
-        return config;
-    }
-
-    // Xử lý giống như authApi cho các route không phải public
+    // Handle the same as authApi for non-public routes
     const token = localStorage.getItem('accessToken');
 
     if (token && isTokenExpired(token)) {
-        try {
-            console.log('Token about to expire, refreshing proactively');
+        console.log('Token expired or about to expire, refreshing proactively');
 
-            // Check if we're already refreshing
-            if (!isRefreshing) {
-                isRefreshing = true;
+        if (!isRefreshing) {
+            isRefreshing = true;
 
-                try {
-                    const newToken = await refreshAccessToken();
+            try {
+                const newToken = await refreshAccessToken();
 
-                    // Update the current request with the new token
-                    if (config.headers) {
-                        config.headers['Authorization'] = `Bearer ${newToken}`;
-                    }
-
-                    isRefreshing = false;
-                } catch (refreshError) {
-                    console.error('Proactive token refresh failed:', refreshError);
-                    isRefreshing = false;
-
-                    // Let the request proceed with the old token
-                    // The response interceptor will handle the 401 if needed
-                }
-            } else {
-                // Another request is already refreshing, wait for it to complete
-                console.log('Another request is already refreshing token, waiting...');
-                await new Promise<void>((resolve) => {
-                    const checkInterval = setInterval(() => {
-                        if (!isRefreshing) {
-                            clearInterval(checkInterval);
-                            resolve();
-                        }
-                    }, 100);
-                });
-
-                // Get the new token after refresh completes
-                const newToken = localStorage.getItem('accessToken');
-                if (newToken && config.headers) {
+                if (config.headers) {
                     config.headers['Authorization'] = `Bearer ${newToken}`;
                 }
+
+                isRefreshing = false;
+            } catch (refreshError) {
+                console.error('Proactive token refresh failed:', refreshError);
+                isRefreshing = false;
             }
-        } catch (error) {
-            console.error('Error in token refresh flow:', error);
-            // Will proceed with old token or no token
+        } else {
+            // Wait for ongoing refresh to complete
+            console.log('Another request is already refreshing token, waiting...');
+            await new Promise<void>((resolve) => {
+                const checkInterval = setInterval(() => {
+                    if (!isRefreshing) {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 100);
+
+                // Set a timeout to prevent infinite waiting
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    resolve();
+                }, 5000);
+            });
+
+            // Get the new token after refresh completes
+            const newToken = localStorage.getItem('accessToken');
+            if (newToken && config.headers) {
+                config.headers['Authorization'] = `Bearer ${newToken}`;
+            }
         }
     }
 
     return addAuthToken(config);
 }, (error) => Promise.reject(error));
 
-// Response interceptors cho cả hai instance
+// Response interceptors for both instances
 authApi.interceptors.response.use(responseHandler, (error) => {
-    // Không xử lý refresh token cho lỗi đăng nhập
-    if (error.config?.url?.includes('/auth/login') || error.config?.url?.includes('/auth/register')) {
+    // Skip token refresh for auth endpoints
+    if (error.config?.url?.includes('/auth/login') ||
+        error.config?.url?.includes('/auth/register') ||
+        error.config?.url?.includes('/auth/refresh-token')) {
         return Promise.reject(error);
     }
 
@@ -704,15 +727,15 @@ authApi.interceptors.response.use(responseHandler, (error) => {
 });
 
 publicApi.interceptors.response.use(responseHandler, (error) => {
-    // Đối với các route public, không cần xử lý refresh token
+    // For public routes, handle errors differently
     if (error.config?.url?.includes('/public/')) {
-        console.log('Lỗi route public - bỏ qua logic refresh token');
+        console.log('Error in public route - skipping token refresh logic');
 
-        // Đối với lỗi 401 ở route public, chỉ log và trả về dữ liệu trống
+        // For 401 errors in public routes, return empty data to avoid crashes
         if (error.response?.status === 401) {
-            console.log('Route public lỗi 401 unauthorized - trả về dữ liệu trống');
+            console.log('Public route returned 401 unauthorized - returning empty data');
 
-            // Trả về một Promise đã resolve với dữ liệu trống để tránh crash
+            // Return a resolved promise with empty data
             return Promise.resolve({
                 data: Array.isArray(error.config?.data) ? [] : {
                     content: [],
@@ -726,65 +749,89 @@ publicApi.interceptors.response.use(responseHandler, (error) => {
         return Promise.reject(error);
     }
 
-    // Không xử lý refresh token cho lỗi đăng nhập
-    if (error.config?.url?.includes('/auth/login') || error.config?.url?.includes('/auth/register')) {
+    // Skip token refresh for auth endpoints
+    if (error.config?.url?.includes('/auth/login') ||
+        error.config?.url?.includes('/auth/register') ||
+        error.config?.url?.includes('/auth/refresh-token')) {
         return Promise.reject(error);
     }
 
-    // Đối với các route khác, xử lý bình thường
+    // For other routes, handle normally
     return handleTokenRefresh(error, publicApi);
 });
 
-// Check token validity on application load
+// Improved token validation on application startup
 const validateTokenOnStartup = async () => {
+    if (hasCheckedAuthOnStartup) {
+        return; // Only check once per page load
+    }
+
+    hasCheckedAuthOnStartup = true;
+
     try {
         const token = localStorage.getItem('accessToken');
         if (!token) {
-            console.log('No access token found on startup, skipping validation');
+            console.log('No access token found on startup');
             return;
         }
 
+        // Check if token is expired or about to expire
         if (isTokenExpired(token)) {
             console.log('Token expired on startup, attempting refresh');
 
-            // Kiểm tra refresh token trước khi thử refresh
             const refreshToken = getRefreshToken();
             if (!refreshToken) {
                 console.log('No refresh token available, clearing session');
-                // Clear tokens
                 localStorage.removeItem('accessToken');
                 store.dispatch(logout());
                 return;
             }
 
-            await refreshAccessToken();
-            console.log('Token refreshed successfully on startup');
+            try {
+                // Try to refresh the token with retries
+                await refreshAccessToken(3, 300);
+                console.log('Token refreshed successfully on startup');
+
+                // Reset the redirect flag after successful refresh
+                isRedirectingToLogin = false;
+            } catch (refreshError) {
+                console.error('Failed to refresh token on startup:', refreshError);
+
+                // For failures, clear tokens but don't redirect unless on a protected route
+                localStorage.removeItem('accessToken');
+                localStorage.removeItem('refreshTokenBackup');
+                document.cookie = 'refreshToken=; Max-Age=0; path=/;';
+                store.dispatch(logout());
+
+                // Only redirect on protected routes
+                const publicPaths = ['/login', '/register', '/forgot-password', '/products', '/home', '/'];
+                const isPublicPath = publicPaths.some(path => window.location.pathname.includes(path));
+
+                if (!isPublicPath && !isRedirectingToLogin) {
+                    isRedirectingToLogin = true;
+                    toast('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.', {
+                        icon: '⚠️',
+                        style: {
+                            borderRadius: '10px',
+                            background: '#FFF9C4',
+                            color: '#F57F17',
+                        },
+                    });
+                    window.location.href = '/login';
+                }
+            }
+        } else {
+            console.log('Token valid on startup, no refresh needed');
         }
     } catch (error) {
-        console.error('Failed to refresh token on startup:', error);
-        // Clear tokens and redirect to login
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshTokenBackup');
-        document.cookie = 'refreshToken=; Max-Age=0; path=/;';
-        store.dispatch(logout());
-
-        // Only redirect if not already on login page
-        if (!window.location.pathname.includes('/login')) {
-            toast('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.', {
-                icon: '⚠️',
-                style: {
-                    borderRadius: '10px',
-                    background: '#FFF9C4',
-                    color: '#F57F17',
-                },
-            });
-            window.location.href = '/login';
-        }
+        console.error('Error validating token on startup:', error);
     }
 };
 
-// Run the validation on startup
-validateTokenOnStartup();
+// Add event listener to reset the redirect flag on location changes
+window.addEventListener('popstate', () => {
+    isRedirectingToLogin = false;
+});
 
 // Add event listener for synchronizing logout across tabs
 window.addEventListener('storage', (event) => {
@@ -792,11 +839,22 @@ window.addEventListener('storage', (event) => {
         // Another tab cleared the token, log out in this tab too
         document.cookie = 'refreshToken=; Max-Age=0; path=/;';
         store.dispatch(logout());
-        if (!window.location.pathname.includes('/login')) {
+
+        // Only redirect if not already on a public page
+        const publicPaths = ['/login', '/register', '/forgot-password', '/products', '/home', '/'];
+        const isPublicPath = publicPaths.some(path => window.location.pathname.includes(path));
+
+        if (!isPublicPath && !isRedirectingToLogin) {
+            isRedirectingToLogin = true;
             window.location.href = '/login';
         }
     }
 });
 
-export {authApi, publicApi, refreshAccessToken};
+// Run validation on startup with a small delay to ensure DOM is ready
+setTimeout(() => {
+    validateTokenOnStartup();
+}, 100);
+
+export {authApi, publicApi, refreshAccessToken, validateTokenOnStartup};
 export default publicApi;

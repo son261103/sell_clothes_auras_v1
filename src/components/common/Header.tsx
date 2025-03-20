@@ -1,4 +1,4 @@
-import React, { useEffect, useState, FormEvent, ChangeEvent, useRef } from 'react';
+import React, { useEffect, useState, FormEvent, ChangeEvent, useRef, useMemo } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import Navbar from './Navbar';
@@ -40,6 +40,24 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
     const { itemCount } = useCart();
     const { searchProducts } = useProduct();
 
+    // Generate a stable avatar URL that only changes when the actual avatar URL changes
+    // This prevents constant re-fetching of the avatar on re-renders
+    const avatarUrl = useMemo(() => {
+        const url = profile?.avatar || user?.avatar;
+        if (!url || avatarError) return '';
+
+        // Add a timestamp only once per session, not on every render
+        // This will refresh the avatar only on page reload, not on every component re-render
+        const cacheBuster = sessionStorage.getItem('avatarTimestamp') || Date.now().toString();
+
+        // Store the timestamp in sessionStorage to keep it consistent during the session
+        if (!sessionStorage.getItem('avatarTimestamp')) {
+            sessionStorage.setItem('avatarTimestamp', cacheBuster);
+        }
+
+        return url.includes('?') ? `${url}&t=${cacheBuster}` : `${url}?t=${cacheBuster}`;
+    }, [profile?.avatar, user?.avatar, avatarError]);
+
     // Chủ động tải profile khi component mount hoặc auth state thay đổi
     useEffect(() => {
         const fetchProfileIfNeeded = async () => {
@@ -61,6 +79,8 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
     useEffect(() => {
         if (!isAuthenticated || !accessToken) {
             setProfileInitialized(false);
+            // Clear avatar timestamp on logout to ensure fresh avatar on next login
+            sessionStorage.removeItem('avatarTimestamp');
         }
     }, [isAuthenticated, accessToken]);
 
@@ -150,18 +170,13 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
             await signOut();
             toast.success('Đăng xuất thành công!');
             setIsUserMenuOpen(false);
+            setAvatarError(false); // Reset avatar error state on logout
+            sessionStorage.removeItem('avatarTimestamp'); // Clear avatar timestamp
             navigate('/');
         } catch (err) {
             toast.error('Đăng xuất thất bại.');
             console.error('Đăng xuất thất bại:', err);
         }
-    };
-
-    // Hàm lấy URL avatar với timestamp để tránh cache
-    const getAvatarUrl = (url?: string): string => {
-        if (!url || avatarError) return '';
-        const timestamp = Date.now();
-        return url.includes('?') ? `${url}&t=${timestamp}` : `${url}?t=${timestamp}`;
     };
 
     // Lấy username từ nhiều nguồn
@@ -194,12 +209,11 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
     // Hiển thị avatar hoặc icon user mặc định
     const renderAvatar = () => {
         if (isAuthenticated) {
-            const avatarUrl = profile?.avatar || user?.avatar;
             if (avatarUrl && !avatarError) {
                 return (
                     <div className="relative">
                         <img
-                            src={getAvatarUrl(avatarUrl)}
+                            src={avatarUrl}
                             alt="Avatar"
                             className="w-6 h-6 rounded-full object-cover border-2 border-primary"
                             onError={() => setAvatarError(true)}
@@ -226,11 +240,10 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
 
     // Avatar lớn cho dropdown menu
     const renderLargeAvatar = () => {
-        const avatarUrl = profile?.avatar || user?.avatar;
         if (avatarUrl && !avatarError) {
             return (
                 <img
-                    src={getAvatarUrl(avatarUrl)}
+                    src={avatarUrl}
                     alt="Avatar"
                     className="w-12 h-12 rounded-full object-cover border-2 border-primary"
                     onError={() => setAvatarError(true)}

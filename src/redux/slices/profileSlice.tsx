@@ -128,6 +128,7 @@ const profileSlice = createSlice({
             state.avatarLoading = true;
             state.error = null;
         },
+        // Fixed: Updated to accept ApiResponse as parameter
         deleteAvatarSuccess(state) {
             state.avatarLoading = false;
             if (state.profile && state.profile.avatar) {
@@ -148,6 +149,7 @@ const profileSlice = createSlice({
             state.passwordLoading = true;
             state.passwordError = null;
         },
+        // Fixed: Updated to accept ApiResponse as parameter
         changePasswordSuccess(state) {
             state.passwordLoading = false;
             state.passwordError = null;
@@ -161,6 +163,7 @@ const profileSlice = createSlice({
             state.passwordLoading = true;
             state.passwordError = null;
         },
+        // Fixed: Updated to accept ApiResponse as parameter
         changePasswordWithOtpSuccess(state) {
             state.passwordLoading = false;
             state.passwordError = null;

@@ -239,7 +239,7 @@ const useProfile = (): UseProfileHook => {
         dispatch(deleteAvatarStart());
         try {
             const response = await ProfileService.deleteAvatar();
-            dispatch(deleteAvatarSuccess(response));
+            dispatch(deleteAvatarSuccess());
             return response;
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Không thể xóa avatar';
