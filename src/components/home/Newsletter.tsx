@@ -176,7 +176,7 @@ const Newsletter: React.FC = () => {
                             <motion.input
                                 type="email"
                                 placeholder="Địa chỉ email của bạn"
-                                className="w-full pl-12 pr-4 py-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 border border-primary/20 dark:border-primary/30 dark:bg-secondary/10 dark:text-textLight shadow-md transition-all duration-300 text-base"
+                                className="w-full pl-12 pr-4 py-4 bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/60 border border-primary/20 dark:border-primary/30 dark:bg-secondary/10 dark:text-textLight shadow-md transition-all duration-300 text-base"
                                 value={email}
                                 onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
                                 disabled={isSubmitting || isSubscribed}
