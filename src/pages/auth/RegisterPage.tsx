@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import useAuth from '../../hooks/useAuth';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { motion } from 'framer-motion';
 import { GiStarSwirl } from 'react-icons/gi';
+import { FcGoogle } from 'react-icons/fc';
+import GlobalAuthService from '../../services/global.service';
+import { GoogleCredentialResponse } from '../../types/global.types';
 
 const RegisterPage: React.FC = () => {
     const [username, setUsername] = useState('');
@@ -15,78 +18,140 @@ const RegisterPage: React.FC = () => {
     const [otp, setOtp] = useState('');
     const [showOtpPopup, setShowOtpPopup] = useState(false);
     const [localError, setLocalError] = useState<string | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [isResendingOtp, setIsResendingOtp] = useState(false);
+    const [googleInitialized, setGoogleInitialized] = useState(false);
+    const googleButtonRef = useRef<HTMLDivElement>(null);
 
     const navigate = useNavigate();
-    const { register, verifyOtp, sendOtp, resendOtp, loading, error } = useAuth();
+    const { register, verifyOtp, sendOtp, resendOtp, loading, error, loginWithGoogleCredentials } = useAuth();
 
-    // Reset localError khi các trường thay đổi
+    // Load Google API script and initialize Google Sign-In
+    useEffect(() => {
+        const loadGoogleAPI = async () => {
+            try {
+                await GlobalAuthService.loadGoogleApiScript();
+                initializeGoogleAuth();
+            } catch (error) {
+                console.error('Failed to load Google API:', error);
+                toast.error('Không thể tải Google API');
+            }
+        };
+
+        loadGoogleAPI();
+    }, []);
+
+    // Initialize Google Sign-In
+    const initializeGoogleAuth = () => {
+        const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+        if (!clientId) {
+            console.error('Google Client ID is not configured');
+            toast.error('Google Client ID chưa được cấu hình');
+            return;
+        }
+
+        GlobalAuthService.initializeGoogleAuth(clientId, handleGoogleCredential);
+        setGoogleInitialized(true);
+    };
+
+    // Render Google button once initialized
+    useEffect(() => {
+        if (googleInitialized && googleButtonRef.current) {
+            GlobalAuthService.renderGoogleButton('google-signin-button', 'filled_blue');
+        }
+    }, [googleInitialized]);
+
+    // Handle Google credential response
+    const handleGoogleCredential = async (response: GoogleCredentialResponse) => {
+        try {
+            setIsSubmitting(true);
+
+            // Use the auth context method for Google login to ensure state consistency
+            await loginWithGoogleCredentials(response, false);
+
+            toast.success('Đăng ký với Google thành công!');
+            navigate('/');
+        } catch (error) {
+            console.error('Google signup error:', error);
+            const errorMessage = error instanceof Error ? error.message : 'Đăng ký với Google thất bại';
+            setLocalError(errorMessage);
+            toast.error(errorMessage);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    // Reset local error when inputs change
     useEffect(() => {
         if (localError) {
             setLocalError(null);
         }
     }, [username, email, password, confirmPassword, fullName, phone, otp]);
 
-    // Regex kiểm tra mật khẩu
+    const handleInputChange = (
+        e: React.ChangeEvent<HTMLInputElement>,
+        setter: React.Dispatch<React.SetStateAction<string>>
+    ) => {
+        setter(e.target.value);
+    };
+
+    // Password regex for validation
     const passwordRegex = /^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[@#$%^&+=]).*$/;
 
-    // Xử lý đăng ký
+    // Handle registration form submission
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
         setLocalError(null);
 
-        // Kiểm tra các trường bắt buộc
+        // Validate required fields
         if (!username || !email || !password || !confirmPassword || !fullName) {
             setLocalError('Vui lòng nhập đầy đủ thông tin bắt buộc');
             toast.error('Vui lòng nhập đầy đủ thông tin bắt buộc');
             return;
         }
 
-        // Kiểm tra mật khẩu khớp
+        // Check if passwords match
         if (password !== confirmPassword) {
             setLocalError('Mật khẩu và xác nhận mật khẩu không khớp');
             toast.error('Mật khẩu và xác nhận mật khẩu không khớp');
             return;
         }
 
-        // Kiểm tra định dạng mật khẩu
+        // Validate password format
         if (!passwordRegex.test(password)) {
             setLocalError('Mật khẩu phải chứa ít nhất một chữ số, một chữ cái thường, một chữ cái in hoa và một ký tự đặc biệt');
             toast.error('Mật khẩu phải chứa ít nhất một chữ số, một chữ cái thường, một chữ cái in hoa và một ký tự đặc biệt');
             return;
         }
 
-        // Dữ liệu gửi lên backend
+        // Data to send to backend
         const registerData = { username, email, password, confirmPassword, fullName, phone };
 
         try {
-            const loadingToast = toast.loading('Đang đăng ký...');
-            await register(registerData); // Gọi hàm register từ useAuth
-            toast.dismiss(loadingToast);
+            setIsSubmitting(true);
+            await register(registerData);
 
-            // Hiển thị thông báo và mở popup OTP
-            toast.success('Đăng ký thành công! Vui lòng kiểm tra email để lấy mã OTP.');
-
-            // Chủ động gửi OTP ngay sau khi đăng ký thành công
+            // Send OTP after successful registration
             try {
                 await sendOtp(email);
                 console.log('OTP đã được gửi tới email:', email);
             } catch (otpError) {
                 console.error('Lỗi khi gửi OTP:', otpError);
-                // Không hiện thông báo lỗi gửi OTP ở đây vì đã đăng ký thành công
             }
 
-            setShowOtpPopup(true); // Hiển thị popup OTP sau khi đăng ký thành công
+            toast.success('Đăng ký thành công! Vui lòng kiểm tra email để lấy mã OTP.');
+            setShowOtpPopup(true);
         } catch (err) {
-            toast.dismiss(); // Xóa loading toast nếu có lỗi
-            const errorMessage = err instanceof Error ? err.message : 'Xác thực thất bại. Vui lòng thử lại.';
+            const errorMessage = err instanceof Error ? err.message : 'Đăng ký thất bại. Vui lòng thử lại.';
             setLocalError(errorMessage);
             toast.error(errorMessage);
             console.error('Register error:', err);
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
-    // Xử lý xác minh OTP
+    // Handle OTP verification
     const handleVerifyOtp = async (e: React.FormEvent) => {
         e.preventDefault();
         setLocalError(null);
@@ -98,9 +163,8 @@ const RegisterPage: React.FC = () => {
         }
 
         try {
-            const loadingToast = toast.loading('Đang xác minh OTP...');
-            const isVerified = await verifyOtp(email, otp); // Gọi hàm verifyOtp từ useAuth
-            toast.dismiss(loadingToast);
+            setIsSubmitting(true);
+            const isVerified = await verifyOtp(email, otp);
 
             if (isVerified) {
                 toast.success('Xác thực thành công! Vui lòng đăng nhập.');
@@ -111,26 +175,24 @@ const RegisterPage: React.FC = () => {
                 toast.error('Mã OTP không hợp lệ');
             }
         } catch (err) {
-            toast.dismiss(); // Xóa loading toast nếu có lỗi
             const errorMessage = err instanceof Error ? err.message : 'Xác thực thất bại. Vui lòng thử lại.';
             setLocalError(errorMessage);
             toast.error(errorMessage);
             console.error('OTP verification error:', err);
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
-    // Xử lý gửi lại OTP
+    // Handle OTP resend
     const handleResendOtp = async () => {
         setLocalError(null);
         setIsResendingOtp(true);
 
         try {
-            const loadingToast = toast.loading('Đang gửi lại mã OTP...');
             await resendOtp(email);
-            toast.dismiss(loadingToast);
             toast.success('Mã OTP mới đã được gửi đến email của bạn!');
         } catch (err) {
-            toast.dismiss(); // Xóa loading toast nếu có lỗi
             const errorMessage = err instanceof Error ? err.message : 'Không thể gửi lại mã OTP. Vui lòng thử lại.';
             setLocalError(errorMessage);
             toast.error(errorMessage);
@@ -140,8 +202,10 @@ const RegisterPage: React.FC = () => {
         }
     };
 
+
     return (
         <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-lightBackground via-primary to-accent dark:from-darkBackground dark:via-secondary dark:to-accent text-textDark dark:text-textLight transition-colors duration-500 relative overflow-hidden">
+            {/* Background decorations */}
             <div className="absolute inset-0 pointer-events-none">
                 <motion.div
                     className="absolute w-96 h-96 bg-primary/20 rounded-full -top-40 -left-40 blur-3xl"
@@ -161,7 +225,8 @@ const RegisterPage: React.FC = () => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8, ease: 'easeOut' }}
             >
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center h-full">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+                    {/* Logo Section */}
                     <div className="flex flex-col items-center justify-center space-y-6">
                         <motion.div
                             className="relative"
@@ -186,131 +251,178 @@ const RegisterPage: React.FC = () => {
                         </motion.p>
                     </div>
 
-                    <div className="p-8 bg-lightBackground/50 dark:bg-darkBackground/50 rounded-2xl shadow-inner border border-highlight/30 h-[550px] flex flex-col">
-                        <h2 className="text-3xl font-bold text-center mb-6 text-textDark dark:text-textLight">
+                    {/* Form Section */}
+                    <div className="p-8 bg-lightBackground/50 dark:bg-darkBackground/50 rounded-2xl shadow-inner border border-highlight/30">
+                        <h2 className="text-3xl font-bold text-center mb-8 text-textDark dark:text-textLight">
                             Đăng ký
                         </h2>
 
+                        {/* Error and Loading States */}
                         {(error || localError) && (
                             <motion.p
-                                className="text-red-500 dark:text-red-400 text-center mb-4 bg-red-50 dark:bg-red-900/20 p-2 rounded-lg text-sm"
+                                className="text-red-500 dark:text-red-400 text-center mb-6 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg text-sm"
                                 initial={{ opacity: 0, y: -10 }}
                                 animate={{ opacity: 1, y: 0 }}
                             >
                                 {error || localError}
                             </motion.p>
                         )}
-                        {loading && (
-                            <p className="text-accent dark:text-accent text-center mb-4 bg-accent/10 p-2 rounded-lg animate-pulse text-sm">
+                        {(loading || isSubmitting) && (
+                            <p className="text-accent dark:text-accent text-center mb-6 bg-accent/10 p-3 rounded-lg animate-pulse text-sm">
                                 Đang xử lý...
                             </p>
                         )}
 
-                        <form onSubmit={handleRegister} className="space-y-3 flex-1">
+                        {/* Registration Form */}
+                        <form onSubmit={handleRegister} className="space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label htmlFor="username" className="block text-sm font-medium text-secondary dark:text-highlight mb-1">
+                                    <label htmlFor="username" className="block text-sm font-medium text-secondary dark:text-highlight mb-2">
                                         Tên người dùng
                                     </label>
                                     <input
                                         id="username"
+                                        name="username"
                                         type="text"
                                         value={username}
-                                        onChange={(e) => setUsername(e.target.value)}
+                                        onChange={(e) => handleInputChange(e, setUsername)}
                                         className="w-full p-3 border border-highlight/50 dark:border-highlight/70 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary dark:focus:ring-accent dark:focus:border-accent bg-white dark:bg-darkBackground text-textDark dark:text-textLight placeholder-secondary/60 dark:placeholder-highlight/60 transition-all duration-300 shadow-sm hover:shadow-md"
                                         placeholder="Tên người dùng"
-                                        disabled={loading}
+                                        disabled={isSubmitting}
                                     />
                                 </div>
                                 <div>
-                                    <label htmlFor="email" className="block text-sm font-medium text-secondary dark:text-highlight mb-1">
+                                    <label htmlFor="email" className="block text-sm font-medium text-secondary dark:text-highlight mb-2">
                                         Email
                                     </label>
                                     <input
                                         id="email"
+                                        name="email"
                                         type="email"
                                         value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
+                                        onChange={(e) => handleInputChange(e, setEmail)}
                                         className="w-full p-3 border border-highlight/50 dark:border-highlight/70 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary dark:focus:ring-accent dark:focus:border-accent bg-white dark:bg-darkBackground text-textDark dark:text-textLight placeholder-secondary/60 dark:placeholder-highlight/60 transition-all duration-300 shadow-sm hover:shadow-md"
                                         placeholder="Email"
-                                        disabled={loading}
+                                        disabled={isSubmitting}
                                     />
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label htmlFor="password" className="block text-sm font-medium text-secondary dark:text-highlight mb-1">
+                                    <label htmlFor="password" className="block text-sm font-medium text-secondary dark:text-highlight mb-2">
                                         Mật khẩu
                                     </label>
                                     <input
                                         id="password"
+                                        name="password"
                                         type="password"
                                         value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
+                                        onChange={(e) => handleInputChange(e, setPassword)}
                                         className="w-full p-3 border border-highlight/50 dark:border-highlight/70 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary dark:focus:ring-accent dark:focus:border-accent bg-white dark:bg-darkBackground text-textDark dark:text-textLight placeholder-secondary/60 dark:placeholder-highlight/60 transition-all duration-300 shadow-sm hover:shadow-md"
                                         placeholder="Mật khẩu"
-                                        disabled={loading}
+                                        disabled={isSubmitting}
                                     />
                                 </div>
                                 <div>
-                                    <label htmlFor="confirmPassword" className="block text-sm font-medium text-secondary dark:text-highlight mb-1">
+                                    <label htmlFor="confirmPassword" className="block text-sm font-medium text-secondary dark:text-highlight mb-2">
                                         Xác nhận mật khẩu
                                     </label>
                                     <input
                                         id="confirmPassword"
+                                        name="confirmPassword"
                                         type="password"
                                         value={confirmPassword}
-                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                        onChange={(e) => handleInputChange(e, setConfirmPassword)}
                                         className="w-full p-3 border border-highlight/50 dark:border-highlight/70 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary dark:focus:ring-accent dark:focus:border-accent bg-white dark:bg-darkBackground text-textDark dark:text-textLight placeholder-secondary/60 dark:placeholder-highlight/60 transition-all duration-300 shadow-sm hover:shadow-md"
                                         placeholder="Xác nhận mật khẩu"
-                                        disabled={loading}
+                                        disabled={isSubmitting}
                                     />
                                 </div>
                             </div>
                             <div>
-                                <label htmlFor="fullName" className="block text-sm font-medium text-secondary dark:text-highlight mb-1">
+                                <label htmlFor="fullName" className="block text-sm font-medium text-secondary dark:text-highlight mb-2">
                                     Họ và tên
                                 </label>
                                 <input
                                     id="fullName"
+                                    name="fullName"
                                     type="text"
                                     value={fullName}
-                                    onChange={(e) => setFullName(e.target.value)}
+                                    onChange={(e) => handleInputChange(e, setFullName)}
                                     className="w-full p-3 border border-highlight/50 dark:border-highlight/70 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary dark:focus:ring-accent dark:focus:border-accent bg-white dark:bg-darkBackground text-textDark dark:text-textLight placeholder-secondary/60 dark:placeholder-highlight/60 transition-all duration-300 shadow-sm hover:shadow-md"
                                     placeholder="Họ và tên"
-                                    disabled={loading}
+                                    disabled={isSubmitting}
                                 />
                             </div>
                             <div>
-                                <label htmlFor="phone" className="block text-sm font-medium text-secondary dark:text-highlight mb-1">
+                                <label htmlFor="phone" className="block text-sm font-medium text-secondary dark:text-highlight mb-2">
                                     Số điện thoại (tùy chọn)
                                 </label>
                                 <input
                                     id="phone"
+                                    name="phone"
                                     type="text"
                                     value={phone}
-                                    onChange={(e) => setPhone(e.target.value)}
+                                    onChange={(e) => handleInputChange(e, setPhone)}
                                     className="w-full p-3 border border-highlight/50 dark:border-highlight/70 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary dark:focus:ring-accent dark:focus:border-accent bg-white dark:bg-darkBackground text-textDark dark:text-textLight placeholder-secondary/60 dark:placeholder-highlight/60 transition-all duration-300 shadow-sm hover:shadow-md"
                                     placeholder="Số điện thoại"
-                                    disabled={loading}
+                                    disabled={isSubmitting}
                                 />
                             </div>
+
                             <motion.button
                                 type="submit"
                                 className="w-full p-3 bg-gradient-to-r from-primary to-accent text-white rounded-lg hover:from-accent hover:to-primary transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed text-base font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-1"
-                                disabled={loading}
+                                disabled={isSubmitting}
                                 whileHover={{ scale: 1.02 }}
                                 whileTap={{ scale: 0.98 }}
                             >
-                                {loading ? 'Đang đăng ký...' : 'Đăng ký'}
+                                {isSubmitting ? 'Đang đăng ký...' : 'Đăng ký'}
                             </motion.button>
                         </form>
 
-                        <p className="text-center text-sm text-secondary dark:text-highlight mt-4">
+                        {/* Divider */}
+                        <div className="relative flex items-center justify-center my-6">
+                            <div className="absolute inset-0 flex items-center">
+                                <div className="w-full border-t border-highlight/30 dark:border-highlight/20"></div>
+                            </div>
+                            <div className="relative px-4 bg-lightBackground/50 dark:bg-darkBackground/50 text-sm text-secondary dark:text-highlight">
+                                Hoặc đăng ký với
+                            </div>
+                        </div>
+
+                        {/* Social Login Buttons */}
+                        <div className="">
+                            {/* Google Sign-In Button */}
+                            <div className="col-span-1">
+                                {googleInitialized ? (
+                                    <div
+                                        id="google-signin-button"
+                                        ref={googleButtonRef}
+                                        className="flex justify-center h-12 items-center"
+                                    ></div>
+                                ) : (
+                                    <motion.button
+                                        className="w-full h-12 bg-white dark:bg-darkBackground border border-highlight/50 rounded-lg flex items-center justify-center text-sm text-textDark dark:text-textLight hover:bg-primary/10 transition-all duration-300 shadow-sm hover:shadow-md group"
+                                        disabled={isSubmitting}
+                                        onClick={() => toast.error('Đang tải Google API...')}
+                                        whileHover={{ scale: 1.02 }}
+                                        whileTap={{ scale: 0.98 }}
+                                        type="button"
+                                    >
+                                        <FcGoogle className="mr-2 text-lg group-hover:scale-110 transition-transform duration-300" />
+                                        <span className="group-hover:text-primary dark:group-hover:text-accent">Google</span>
+                                    </motion.button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Register Link */}
+                        <p className="text-center text-sm text-secondary dark:text-highlight mt-6">
                             Đã có tài khoản?{' '}
                             <Link
                                 to="/login"
-                                className="text-primary dark:text-primary hover:text-accent dark:hover:text-accent transition-colors duration-300"
+                                className="text-primary dark:text-primary hover:text-accent dark:hover:text-accent transition-colors duration-300 font-medium"
                             >
                                 Đăng nhập
                             </Link>
@@ -319,7 +431,7 @@ const RegisterPage: React.FC = () => {
                 </div>
             </motion.div>
 
-            {/* OTP Popup - Đã cập nhật */}
+            {/* OTP Popup */}
             {showOtpPopup && (
                 <motion.div
                     className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
@@ -363,17 +475,17 @@ const RegisterPage: React.FC = () => {
                                     onChange={(e) => setOtp(e.target.value)}
                                     className="w-full p-3 border border-highlight/50 dark:border-highlight/70 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary dark:focus:ring-accent dark:focus:border-accent bg-white dark:bg-darkBackground text-textDark dark:text-textLight placeholder-secondary/60 dark:placeholder-highlight/60 transition-all duration-300 shadow-sm hover:shadow-md"
                                     placeholder="Nhập mã OTP"
-                                    disabled={loading || isResendingOtp}
+                                    disabled={isSubmitting || isResendingOtp}
                                 />
                             </div>
                             <motion.button
                                 type="submit"
                                 className="w-full p-3 bg-gradient-to-r from-primary to-accent text-white rounded-lg hover:from-accent hover:to-primary transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed text-base font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-1"
-                                disabled={loading || isResendingOtp}
+                                disabled={isSubmitting || isResendingOtp}
                                 whileHover={{ scale: 1.02 }}
                                 whileTap={{ scale: 0.98 }}
                             >
-                                {loading ? 'Đang xác nhận...' : 'Xác nhận OTP'}
+                                {isSubmitting ? 'Đang xác nhận...' : 'Xác nhận OTP'}
                             </motion.button>
 
                             <div className="flex justify-between items-center mt-4 pt-2 border-t border-highlight/20">
@@ -381,7 +493,7 @@ const RegisterPage: React.FC = () => {
                                     type="button"
                                     onClick={handleResendOtp}
                                     className="text-sm text-primary dark:text-primary hover:text-accent dark:hover:text-accent transition-colors duration-300 underline"
-                                    disabled={loading || isResendingOtp}
+                                    disabled={isSubmitting || isResendingOtp}
                                     whileHover={{ scale: 1.02 }}
                                     whileTap={{ scale: 0.98 }}
                                 >

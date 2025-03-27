@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import useAuth from '../../hooks/useAuth';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { motion } from 'framer-motion';
 import { FcGoogle } from 'react-icons/fc';
-import { FaFacebook } from 'react-icons/fa';
 import { GiStarSwirl } from 'react-icons/gi';
+import GlobalAuthService from '../../services/global.service';
+import { GoogleCredentialResponse } from '../../types/global.types';
 
 const LoginPage: React.FC = () => {
     const [loginId, setLoginId] = useState('');
@@ -13,9 +14,66 @@ const LoginPage: React.FC = () => {
     const [rememberMe, setRememberMe] = useState(false);
     const [localError, setLocalError] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [googleInitialized, setGoogleInitialized] = useState(false);
+    const googleButtonRef = useRef<HTMLDivElement>(null);
 
     const navigate = useNavigate();
-    const { login, loading, error } = useAuth();
+    const { login, loading, error, loginWithGoogleCredentials } = useAuth();
+
+    // Load Google API script and initialize Google Sign-In
+    useEffect(() => {
+        const loadGoogleAPI = async () => {
+            try {
+                await GlobalAuthService.loadGoogleApiScript();
+                initializeGoogleAuth();
+            } catch (error) {
+                console.error('Failed to load Google API:', error);
+                toast.error('Không thể tải Google API');
+            }
+        };
+
+        loadGoogleAPI();
+    }, []);
+
+    // Initialize Google Sign-In
+    const initializeGoogleAuth = () => {
+        const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
+        if (!clientId) {
+            console.error('Google Client ID is not configured');
+            toast.error('Google Client ID chưa được cấu hình');
+            return;
+        }
+
+        GlobalAuthService.initializeGoogleAuth(clientId, handleGoogleCredential);
+        setGoogleInitialized(true);
+    };
+
+    // Render Google button once initialized
+    useEffect(() => {
+        if (googleInitialized && googleButtonRef.current) {
+            GlobalAuthService.renderGoogleButton('google-signin-button', 'filled_blue');
+        }
+    }, [googleInitialized]);
+
+    // Handle Google credential response
+    const handleGoogleCredential = async (response: GoogleCredentialResponse) => {
+        try {
+            setIsSubmitting(true);
+
+            // Use the auth context method for Google login to ensure state consistency
+            await loginWithGoogleCredentials(response, rememberMe);
+
+            toast.success('Đăng nhập Google thành công!');
+            navigate('/');
+        } catch (error) {
+            console.error('Google login error:', error);
+            const errorMessage = error instanceof Error ? error.message : 'Đăng nhập Google thất bại';
+            setLocalError(errorMessage);
+            toast.error(errorMessage);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
 
     // Khôi phục thông tin đăng nhập nếu "Ghi nhớ tôi" được lưu
     useEffect(() => {
@@ -32,10 +90,6 @@ const LoginPage: React.FC = () => {
             setLocalError(null);
         }
     }, [loginId, password]);
-
-    // Log trạng thái ban đầu để debug
-    useEffect(() => {
-    }, [loading, error]);
 
     const handleInputChange = (
         e: React.ChangeEvent<HTMLInputElement>,
@@ -73,10 +127,6 @@ const LoginPage: React.FC = () => {
         } finally {
             setIsSubmitting(false);
         }
-    };
-
-    const handleSocialLogin = (provider: string) => {
-        toast.error(`Tính năng đăng nhập bằng ${provider} đang được phát triển`);
     };
 
     return (
@@ -226,31 +276,42 @@ const LoginPage: React.FC = () => {
                             </motion.button>
                         </form>
 
-                        {/* Social Login Buttons */}
-                        <div className="mt-8 space-y-4">
-                            <motion.button
-                                className="w-full p-3 bg-white dark:bg-darkBackground border border-highlight/50 rounded-lg flex items-center justify-center text-sm text-textDark dark:text-textLight hover:bg-primary/10 transition-all duration-300 shadow-sm hover:shadow-md group"
-                                disabled={isSubmitting}
-                                onClick={() => handleSocialLogin('Google')}
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                                type="button"
-                            >
-                                <FcGoogle className="mr-2 text-lg group-hover:scale-110 transition-transform duration-300" />
-                                <span className="group-hover:text-primary dark:group-hover:text-accent">Đăng nhập bằng Google</span>
-                            </motion.button>
+                        {/* Divider */}
+                        <div className="relative flex items-center justify-center my-6">
+                            <div className="absolute inset-0 flex items-center">
+                                <div className="w-full border-t border-highlight/30 dark:border-highlight/20"></div>
+                            </div>
+                            <div className="relative px-4 bg-lightBackground/50 dark:bg-darkBackground/50 text-sm text-secondary dark:text-highlight">
+                                Hoặc đăng nhập với
+                            </div>
+                        </div>
 
-                            <motion.button
-                                className="w-full p-3 bg-white dark:bg-darkBackground border border-highlight/50 rounded-lg flex items-center justify-center text-sm text-textDark dark:text-textLight hover:bg-primary/10 transition-all duration-300 shadow-sm hover:shadow-md group"
-                                disabled={isSubmitting}
-                                onClick={() => handleSocialLogin('Facebook')}
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
-                                type="button"
-                            >
-                                <FaFacebook className="mr-2 text-lg text-[#3b5998] group-hover:scale-110 transition-transform duration-300" />
-                                <span className="group-hover:text-primary dark:group-hover:text-accent">Đăng nhập bằng Facebook</span>
-                            </motion.button>
+                        {/* Social Login Buttons - Moved below the form and placed side by side */}
+                        <div className="">
+                            {/* Google Sign-In Button */}
+                            <div className="col-span-1">
+                                {googleInitialized ? (
+                                    <div
+                                        id="google-signin-button"
+                                        ref={googleButtonRef}
+                                        className="flex justify-center h-12 items-center"
+                                    ></div>
+                                ) : (
+                                    <motion.button
+                                        className="w-full h-12 border border-highlight/50 rounded-lg flex items-center justify-center text-sm text-textDark dark:text-textLight hover:bg-primary/10 transition-all duration-300 shadow-sm hover:shadow-md group"
+                                        disabled={isSubmitting}
+                                        onClick={() => toast.error('Đang tải Google API...')}
+                                        whileHover={{ scale: 1.02 }}
+                                        whileTap={{ scale: 0.98 }}
+                                        type="button"
+                                    >
+                                        <FcGoogle className="mr-2 text-lg group-hover:scale-110 transition-transform duration-300" />
+                                        <span className="group-hover:text-primary dark:group-hover:text-accent">Google</span>
+                                    </motion.button>
+                                )}
+                            </div>
+
+                            {/* Facebook Login Button */}
                         </div>
 
                         {/* Register Link */}
@@ -258,7 +319,7 @@ const LoginPage: React.FC = () => {
                             Chưa có tài khoản?{' '}
                             <Link
                                 to="/register"
-                                className="text-primary dark:text-primary hover:text-accent dark:hover:text-accent transition-colors duration-300"
+                                className="text-primary dark:text-primary hover:text-accent dark:hover:text-accent transition-colors duration-300 font-medium"
                             >
                                 Đăng ký ngay
                             </Link>

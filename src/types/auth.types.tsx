@@ -1,12 +1,12 @@
-// User status enum (phù hợp với backend)
+// User status enum
 export enum UserStatus {
     ACTIVE = "ACTIVE",
     LOCKED = "LOCKED",
-    BANNER = "BANNER",
+    BANNED = "BANNED",
     PENDING = "PENDING",
 }
 
-// Gender enum (phù hợp với backend)
+// Gender enum
 export enum Gender {
     MALE = "MALE",
     FEMALE = "FEMALE",
@@ -58,6 +58,7 @@ export interface ChangePasswordWithOtpRequest {
 export interface ApiResponse {
     success: boolean;
     message: string;
+    avatar?: string;
     userStatus?: UserStatus;
     email?: string;
 }
@@ -74,6 +75,7 @@ export interface TokenResponse {
     roles: string[];
     permissions: string[];
     userStatus?: UserStatus;
+    avatar?: string;
 }
 
 export interface RegisterResponse {
@@ -85,7 +87,7 @@ export interface RegisterResponse {
     userStatus?: UserStatus;
 }
 
-// User profile interface (phù hợp với phản hồi từ backend)
+// User profile interface
 export interface UserProfile {
     userId: number;
     username: string;
@@ -100,38 +102,43 @@ export interface UserProfile {
     permissions: string[];
     address?: string;
     dateOfBirth?: string;
-    gender?: 'MALE' | 'FEMALE' | 'OTHER';
+    gender?: Gender;
 }
 
-// Profile update DTO (phù hợp với cấu trúc backend mong đợi)
+// Profile update DTO
 export interface ProfileUpdateDTO {
     fullName?: string;
     email?: string;
     phone?: string;
-    gender?: 'MALE' | 'FEMALE' | 'OTHER';
+    gender?: Gender;
     dateOfBirth?: string;
     address?: string;
 }
 
-// Chuyển đổi từ UserProfile sang ProfileUpdateDTO
+// Avatar response from backend
+export interface AvatarResponse extends ApiResponse {
+    avatarUrl?: string;
+}
+
+// Convert from UserProfile to ProfileUpdateDTO
 export function profileToUpdateDTO(profile: UserProfile): ProfileUpdateDTO {
     return {
         fullName: profile.fullName || '',
         email: profile.email || '',
         phone: profile.phone || '',
-        gender: profile.gender || 'OTHER',
+        gender: profile.gender || Gender.OTHER,
         dateOfBirth: profile.dateOfBirth || '',
         address: profile.address || '',
     };
 }
 
-// Chuyển đổi string sang UserStatus
+// Convert string to UserStatus
 export function toUserStatus(status: string | null | undefined): UserStatus | undefined {
     if (!status || !Object.values(UserStatus).includes(status as UserStatus)) return undefined;
     return status as UserStatus;
 }
 
-// Cấu hình modal trạng thái
+// Status modal configuration
 export interface StatusModalConfig {
     isOpen: boolean;
     type: 'locked' | 'banned' | 'pending';

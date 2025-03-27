@@ -4,6 +4,9 @@ import { FiUpload, FiX, FiTrash2, FiCamera, FiUser } from 'react-icons/fi';
 import { createPortal } from 'react-dom';
 import LoadingSpinner from '../common/LoadingSpinner';
 
+// Server's file size limit in bytes
+const MAX_SERVER_FILE_SIZE = 1 * 1024 * 1024; // 1MB (server limit)
+
 interface AvatarUploadModalProps {
     isOpen: boolean;
     currentAvatar?: string;
@@ -34,6 +37,7 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
     const [retryCount, setRetryCount] = useState(0);
     const maxRetries = 3;
     const retryTimeoutRef = useRef<number | null>(null);
+    const [isCompressing, setIsCompressing] = useState(false);
 
     // Animation variants
     const backdropVariants = {
@@ -70,10 +74,25 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
         }
     };
 
+    // Helper to check if a URL is a Google avatar URL
+    const isGoogleAvatarUrl = (url: string): "" | boolean => {
+        return url && (
+            url.includes('googleusercontent.com') ||
+            url.includes('google.com') ||
+            url.includes('googleapis.com')
+        );
+    };
+
     // Memoized function to get avatar URL with timestamp
     const getAvatarUrl = useCallback((url?: string, forceNewTimestamp = false): string | undefined => {
         if (!url) return undefined;
         if (url.startsWith('blob:')) return url;
+
+        // For Google avatar URLs, handle differently to prevent CORS issues
+        if (isGoogleAvatarUrl(url)) {
+            // Return Google URLs without any modifications
+            return url;
+        }
 
         try {
             const urlObj = new URL(url, window.location.origin);
@@ -92,6 +111,12 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
             return urlObj.toString();
         } catch (error) {
             console.error('Error processing avatar URL:', error);
+
+            // Don't modify Google URLs
+            if (isGoogleAvatarUrl(url)) {
+                return url;
+            }
+
             const hasParams = url.includes('?');
             const timeValue = forceNewTimestamp ? Date.now() : timestamp;
             let result = `${url}${hasParams ? '&' : '?'}t=${timeValue}`;
@@ -141,8 +166,122 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
             }
         };
 
+        // Add special handling for CORS issues with Google avatars
+        if (isGoogleAvatarUrl(url)) {
+            img.crossOrigin = "anonymous";
+            img.referrerPolicy = "no-referrer";
+        }
+
         img.src = url;
     }, [retryCount, maxRetries, currentAvatar, getAvatarUrl]);
+
+    // Compress image to fit within 1MB limit
+    const compressImage = async (file: File, maxWidth = 1024, quality = 0.8, maxSizeBytes = MAX_SERVER_FILE_SIZE): Promise<File> => {
+        setIsCompressing(true);
+
+        try {
+            return new Promise((resolve, reject) => {
+                // Small files don't need compression
+                if (file.size <= maxSizeBytes * 0.9) {
+                    setIsCompressing(false);
+                    resolve(file);
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target?.result as string;
+                    img.onload = () => {
+                        // Create canvas for resizing
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+
+                        // Resize if width is larger than maxWidth
+                        if (width > maxWidth) {
+                            height = (maxWidth / width) * height;
+                            width = maxWidth;
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+
+                        // Draw image on canvas
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) {
+                            setIsCompressing(false);
+                            reject(new Error('Could not get canvas context'));
+                            return;
+                        }
+
+                        // Draw image with white background (for transparent PNGs)
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.fillRect(0, 0, width, height);
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        // Convert to blob with compression
+                        canvas.toBlob(
+                            (blob) => {
+                                if (!blob) {
+                                    setIsCompressing(false);
+                                    reject(new Error('Could not create blob'));
+                                    return;
+                                }
+
+                                // Check if compression was sufficient
+                                if (blob.size > maxSizeBytes) {
+                                    // Try with lower quality or size
+                                    if (quality > 0.5) {
+                                        // Try with lower quality first
+                                        compressImage(file, maxWidth, quality - 0.1, maxSizeBytes)
+                                            .then(resolve)
+                                            .catch(reject);
+                                    } else if (maxWidth > 512) {
+                                        // Then try with smaller dimensions
+                                        compressImage(file, maxWidth * 0.8, 0.7, maxSizeBytes)
+                                            .then(resolve)
+                                            .catch(reject);
+                                    } else {
+                                        // If all else fails, tell the user
+                                        setIsCompressing(false);
+                                        reject(new Error(`Không thể nén ảnh xuống dưới 1MB. Vui lòng chọn ảnh nhỏ hơn hoặc sử dụng công cụ nén ảnh trước khi tải lên.`));
+                                    }
+                                    return;
+                                }
+
+                                // Create new File object
+                                const compressedFile = new File([blob], file.name, {
+                                    type: file.type,
+                                    lastModified: Date.now()
+                                });
+
+                                console.log(`Compressed image: ${file.size / 1024}KB -> ${compressedFile.size / 1024}KB`);
+                                setIsCompressing(false);
+                                resolve(compressedFile);
+                            },
+                            file.type,
+                            quality
+                        );
+                    };
+
+                    img.onerror = () => {
+                        setIsCompressing(false);
+                        reject(new Error('Error loading image for compression'));
+                    };
+                };
+
+                reader.onerror = () => {
+                    setIsCompressing(false);
+                    reject(new Error('Error reading file for compression'));
+                };
+            });
+        } catch (error) {
+            setIsCompressing(false);
+            throw error;
+        }
+    };
 
     // Cleanup on unmount
     useEffect(() => {
@@ -150,8 +289,12 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
             if (retryTimeoutRef.current) {
                 window.clearTimeout(retryTimeoutRef.current);
             }
+            // Cleanup any previews
+            if (preview) {
+                URL.revokeObjectURL(preview);
+            }
         };
-    }, []);
+    }, [preview]);
 
     // Reset state when modal opens/closes
     useEffect(() => {
@@ -162,6 +305,7 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
             setImgError(false);
             setIsImageLoading(true);
             setRetryCount(0);
+            setIsCompressing(false);
 
             if (currentAvatar) {
                 const avatarUrl = getAvatarUrl(currentAvatar);
@@ -219,23 +363,37 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
     }, [selectedFile]);
 
     // Handle file selection
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) {
             setSelectedFile(null);
             return;
         }
 
         const file = e.target.files[0];
-        if (file.size > 5 * 1024 * 1024) {
-            setUploadError('Kích thước file quá lớn. Vui lòng chọn file nhỏ hơn 5MB.');
-            return;
-        }
 
+        // Check file type first
         if (!file.type.startsWith('image/')) {
             setUploadError('Chỉ chấp nhận file hình ảnh.');
             return;
         }
 
+        // Check file size against server limit
+        if (file.size > MAX_SERVER_FILE_SIZE) {
+            setUploadError(null); // Clear error while we try compression
+
+            try {
+                // Try to compress the image to fit within 1MB
+                console.log(`Compressing image from ${(file.size / (1024 * 1024)).toFixed(2)}MB to under 1MB...`);
+                const compressedFile = await compressImage(file);
+                setSelectedFile(compressedFile);
+            } catch (error) {
+                console.error('Compression error:', error);
+                setUploadError(`Kích thước ảnh vượt quá giới hạn 1MB (${(file.size / (1024 * 1024)).toFixed(2)}MB). ${error instanceof Error ? error.message : ''}`);
+            }
+            return;
+        }
+
+        // File is valid
         setSelectedFile(file);
         setUploadError(null);
     };
@@ -249,6 +407,12 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
     const handleUpload = async () => {
         if (!selectedFile) return;
 
+        // Final check on file size before sending to server
+        if (selectedFile.size > MAX_SERVER_FILE_SIZE) {
+            setUploadError(`Kích thước ảnh vẫn vượt quá giới hạn 1MB sau khi đã nén (${(selectedFile.size / (1024 * 1024)).toFixed(2)}MB). Vui lòng chọn ảnh nhỏ hơn.`);
+            return;
+        }
+
         setIsLoading(true);
         setUploadError(null);
 
@@ -256,7 +420,22 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
             await onUpload(selectedFile, !!currentAvatar);
         } catch (error) {
             console.error('Error in avatar upload:', error);
-            setUploadError('Không thể tải lên ảnh đại diện. Vui lòng thử lại sau.');
+
+            // Detect MaxUploadSizeExceededException
+            let errorMessage = 'Không thể tải lên ảnh đại diện. Vui lòng thử lại sau.';
+
+            if (error instanceof Error) {
+                if (error.message.includes('Maximum upload size exceeded') ||
+                    error.message.includes('exceeds its maximum permitted size')) {
+                    errorMessage = `Kích thước ảnh vượt quá giới hạn cho phép (1MB). Vui lòng chọn ảnh nhỏ hơn.`;
+                } else if (error.message.includes('content type')) {
+                    errorMessage = 'Định dạng ảnh không được hỗ trợ. Chỉ chấp nhận JPEG, PNG hoặc GIF.';
+                } else {
+                    errorMessage = error.message;
+                }
+            }
+
+            setUploadError(errorMessage);
             setIsLoading(false);
         }
     };
@@ -332,7 +511,7 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                             whileTap={{ scale: 0.95 }}
                             className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-gray-300 dark:hover:text-white z-10"
                             onClick={onClose}
-                            disabled={isLoading}
+                            disabled={isLoading || isCompressing}
                         >
                             <FiX className="w-5 h-5" />
                         </motion.button>
@@ -356,7 +535,7 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                                 >
                                     <div className="w-36 h-36 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700 shadow-lg flex items-center justify-center border-4 border-white dark:border-gray-600 relative">
                                         <AnimatePresence>
-                                            {(isImageLoading || isLoading) && (
+                                            {(isImageLoading || isLoading || isCompressing) && (
                                                 <motion.div
                                                     initial={{ opacity: 0 }}
                                                     animate={{ opacity: 1 }}
@@ -364,7 +543,12 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                                                     className="absolute inset-0 flex items-center justify-center bg-gray-200 dark:bg-gray-700 z-10"
                                                 >
                                                     <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-                                                    {retryCount > 0 && (
+                                                    {isCompressing && (
+                                                        <div className="absolute bottom-1 left-0 right-0 text-center text-xs text-white bg-black bg-opacity-50 py-1">
+                                                            Đang nén ảnh...
+                                                        </div>
+                                                    )}
+                                                    {retryCount > 0 && !isCompressing && (
                                                         <div className="absolute bottom-1 left-0 right-0 text-center text-xs text-white bg-black bg-opacity-50 py-1">
                                                             Đang thử lại... {retryCount}/{maxRetries}
                                                         </div>
@@ -376,7 +560,7 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                                             <img
                                                 src={preview}
                                                 alt="Avatar Preview"
-                                                className={`w-full h-full object-cover ${(isImageLoading || isLoading) ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
+                                                className={`w-full h-full object-cover ${(isImageLoading || isLoading || isCompressing) ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
                                                 onLoad={handleImageLoad}
                                                 onError={handleImageError}
                                                 key={`preview-${selectedFile?.name}-${Date.now()}`}
@@ -389,9 +573,11 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                                                 onLoad={handleImageLoad}
                                                 onError={handleImageError}
                                                 key={`avatar-modal-${timestamp}-${retryCount}`}
+                                                crossOrigin="anonymous"
+                                                referrerPolicy="no-referrer"
                                             />
                                         ) : (
-                                            <FiUser className={`w-16 h-16 text-gray-400 dark:text-gray-500 ${(isLoading) ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`} />
+                                            <FiUser className={`w-16 h-16 text-gray-400 dark:text-gray-500 ${(isLoading || isCompressing) ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`} />
                                         )}
                                     </div>
                                     <motion.div
@@ -403,7 +589,7 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                                             type="button"
                                             onClick={handleBrowseClick}
                                             className="w-12 h-12 rounded-full bg-primary text-white shadow-lg flex items-center justify-center hover:bg-primary/90 transition-colors"
-                                            disabled={isLoading}
+                                            disabled={isLoading || isCompressing}
                                         >
                                             <FiUpload className="w-5 h-5" />
                                         </button>
@@ -413,16 +599,16 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                                     type="file"
                                     ref={fileInputRef}
                                     onChange={handleFileSelect}
-                                    accept="image/*"
+                                    accept="image/jpeg,image/png,image/gif"
                                     className="hidden"
                                 />
                                 <motion.div
                                     variants={itemVariants}
                                     className="text-sm text-gray-500 dark:text-gray-400 text-center max-w-xs mb-4 space-y-2"
                                 >
-                                    <p>Chọn một hình ảnh từ thiết bị của bạn làm ảnh đại diện. Kích thước tối đa 5MB.</p>
+                                    <p>Chọn một hình ảnh từ thiết bị của bạn làm ảnh đại diện. <span className="font-medium text-primary">Kích thước tối đa 1MB</span>.</p>
                                     <p className="text-xs text-primary-500 italic">
-                                        Sau khi tải lên, ảnh đại diện mới sẽ được xử lý và có thể mất vài giây để hiển thị.
+                                        Hệ thống sẽ tự động nén ảnh nếu kích thước lớn hơn 1MB. Nên dùng ảnh vuông để hiển thị tốt nhất.
                                     </p>
                                 </motion.div>
                                 {uploadError && (
@@ -435,19 +621,31 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                                         </span>
                                     </motion.p>
                                 )}
+                                {selectedFile && (
+                                    <motion.p
+                                        variants={itemVariants}
+                                        className="text-green-500 mt-2 text-xs bg-green-50 dark:bg-green-900/20 p-2 rounded-md"
+                                    >
+                                        <span className="flex items-center">
+                                            Kích thước ảnh: {(selectedFile.size / 1024).toFixed(1)}KB
+                                            {selectedFile.size > MAX_SERVER_FILE_SIZE * 0.9 &&
+                                                " - Gần đạt đến giới hạn 1MB"}
+                                        </span>
+                                    </motion.p>
+                                )}
                             </motion.div>
                             <motion.div variants={itemVariants} className="flex justify-between">
                                 <motion.button
                                     type="button"
                                     onClick={handleDelete}
                                     className={`px-4 py-3 flex items-center rounded-lg transition-all ${
-                                        currentAvatar && !isLoading
+                                        currentAvatar && !isLoading && !isCompressing
                                             ? 'bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 dark:text-red-400'
                                             : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-700 dark:text-gray-500'
                                     }`}
-                                    disabled={!currentAvatar || isLoading}
-                                    whileHover={currentAvatar && !isLoading ? { scale: 1.03 } : {}}
-                                    whileTap={currentAvatar && !isLoading ? { scale: 0.97 } : {}}
+                                    disabled={!currentAvatar || isLoading || isCompressing}
+                                    whileHover={currentAvatar && !isLoading && !isCompressing ? { scale: 1.03 } : {}}
+                                    whileTap={currentAvatar && !isLoading && !isCompressing ? { scale: 0.97 } : {}}
                                 >
                                     {isLoading ? (
                                         <div className="flex items-center">
@@ -465,18 +663,23 @@ const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                                     type="button"
                                     onClick={handleUpload}
                                     className={`px-4 py-3 rounded-lg transition-all ${
-                                        selectedFile && !isLoading
+                                        selectedFile && !isLoading && !isCompressing
                                             ? 'bg-primary text-white hover:bg-primary/90'
                                             : 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-700 dark:text-gray-500'
                                     }`}
-                                    disabled={!selectedFile || isLoading}
-                                    whileHover={selectedFile && !isLoading ? { scale: 1.03 } : {}}
-                                    whileTap={selectedFile && !isLoading ? { scale: 0.97 } : {}}
+                                    disabled={!selectedFile || isLoading || isCompressing}
+                                    whileHover={selectedFile && !isLoading && !isCompressing ? { scale: 1.03 } : {}}
+                                    whileTap={selectedFile && !isLoading && !isCompressing ? { scale: 0.97 } : {}}
                                 >
                                     {isLoading ? (
                                         <div className="flex items-center">
                                             <LoadingSpinner size="small" />
                                             <span className="ml-2">Đang xử lý...</span>
+                                        </div>
+                                    ) : isCompressing ? (
+                                        <div className="flex items-center">
+                                            <LoadingSpinner size="small" />
+                                            <span className="ml-2">Đang nén...</span>
                                         </div>
                                     ) : (
                                         <div className="flex items-center">

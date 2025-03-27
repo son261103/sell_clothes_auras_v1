@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiUser, FiPackage, FiMapPin, FiSettings, FiLogOut, FiCamera } from 'react-icons/fi';
+import { FaGoogle, FaFacebookF } from 'react-icons/fa';
 import { UserProfile } from '../../types/profile.types';
 
 interface ProfileSidebarProps {
@@ -13,6 +14,10 @@ interface ProfileSidebarProps {
     isUpdatingAvatar?: boolean;
     tempAvatarUrl?: string | null;
     isCheckingAvailability?: boolean;
+    onGoogleLogin?: () => void;
+    onFacebookLogin?: () => void;
+    isGoogleLinked: boolean; // Make this explicitly required and boolean
+    isFacebookLinked: boolean; // Make this explicitly required and boolean
 }
 
 const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
@@ -24,15 +29,22 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
                                                            timestamp = Date.now(),
                                                            isUpdatingAvatar = false,
                                                            tempAvatarUrl = null,
-                                                           isCheckingAvailability = false
+                                                           isCheckingAvailability = false,
+                                                           onGoogleLogin,
+                                                           onFacebookLogin,
+                                                           isGoogleLinked = false,
+                                                           isFacebookLinked = false
                                                        }) => {
     const [avatarError, setAvatarError] = useState(false);
     const [showDebugInfo, setShowDebugInfo] = useState(false);
     const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
     const [isAvatarLoading, setIsAvatarLoading] = useState(true);
     const [retryCount, setRetryCount] = useState(0);
-    const maxRetries = 3;
+    const maxRetries = 1; // Reduced from 3 to 1 to limit excessive retries
     const retryTimeoutRef = useRef<number | null>(null);
+
+    // Track if component is mounted to prevent state updates after unmounting
+    const isMounted = useRef(true);
 
     // Animation variants
     const avatarVariants = {
@@ -85,9 +97,46 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
         }
     };
 
+    const socialButtonVariants = {
+        initial: { opacity: 0, y: 10 },
+        animate: {
+            opacity: 1,
+            y: 0,
+            transition: {
+                type: "spring",
+                stiffness: 300,
+                damping: 25
+            }
+        },
+        hover: {
+            scale: 1.05,
+            transition: {
+                type: "spring",
+                stiffness: 400,
+                damping: 10
+            }
+        },
+        tap: { scale: 0.95 }
+    };
+
+    // Helper to check if a URL is a Google avatar URL
+    const isGoogleAvatarUrl = (url: string): "" | boolean => {
+        return url && (
+            url.includes('googleusercontent.com') ||
+            url.includes('google.com') ||
+            url.includes('googleapis.com')
+        );
+    };
+
     // Memoized function to get avatar URL with timestamp
     const getAvatarUrl = useCallback((url?: string, forceNewTimestamp = false): string => {
         if (!url) return '';
+
+        // For Google avatar URLs, handle differently to prevent CORS issues
+        if (isGoogleAvatarUrl(url)) {
+            // Return Google URLs without any modifications
+            return url;
+        }
 
         try {
             if (url.startsWith('/')) {
@@ -111,6 +160,12 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
             return urlObj.toString();
         } catch (error) {
             console.error('Error processing avatar URL:', error);
+
+            // Don't modify Google URLs
+            if (isGoogleAvatarUrl(url)) {
+                return url;
+            }
+
             const separator = url.includes('?') ? '&' : '?';
             const timeValue = forceNewTimestamp ? Date.now() : timestamp;
             let result = `${url}${separator}t=${timeValue}`;
@@ -121,11 +176,26 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
         }
     }, [timestamp]);
 
-    // Memoized function to load avatar image with retry logic
+    // Function to create a placeholder avatar with initials
+    const getInitialsAvatar = useCallback(() => {
+        setAvatarError(true);
+        setIsAvatarLoading(false);
+    }, []);
+
+    // Memoized function to load avatar image with limited retry logic
     const loadAvatarImage = useCallback((url: string) => {
+        if (!isMounted.current) return;
+
+        // Skip loading for Google avatars - we'll handle them directly in the component
+        if (isGoogleAvatarUrl(url)) {
+            setIsAvatarLoading(false);
+            return;
+        }
+
         const img = new Image();
 
         img.onload = () => {
+            if (!isMounted.current) return;
             console.log("ProfileSidebar: Avatar image loaded successfully");
             setIsAvatarLoading(false);
             setAvatarError(false);
@@ -133,32 +203,56 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
         };
 
         img.onerror = () => {
+            if (!isMounted.current) return;
             console.error(`ProfileSidebar: Failed to load avatar image (attempt ${retryCount + 1}/${maxRetries}):`, url);
+
+            // For Google avatar URLs, just use the initials avatar
+            if (isGoogleAvatarUrl(url)) {
+                getInitialsAvatar();
+                return;
+            }
 
             if (retryCount < maxRetries) {
                 setRetryCount(prev => prev + 1);
-                const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 10000);
+                const retryDelay = 1000; // Fixed delay of 1 second
                 console.log(`Retrying in ${retryDelay}ms...`);
+
                 if (retryTimeoutRef.current) {
                     window.clearTimeout(retryTimeoutRef.current);
                 }
+
                 retryTimeoutRef.current = window.setTimeout(() => {
+                    if (!isMounted.current) return;
+
+                    // Try one more time with a new timestamp
                     const retryUrl = getAvatarUrl(user?.avatar || '', true);
                     setAvatarUrl(retryUrl);
-                    loadAvatarImage(retryUrl);
+
+                    // Just try one final direct load
+                    const finalImg = new Image();
+                    finalImg.onload = () => {
+                        if (!isMounted.current) return;
+                        setIsAvatarLoading(false);
+                        setAvatarError(false);
+                    };
+                    finalImg.onerror = () => {
+                        if (!isMounted.current) return;
+                        getInitialsAvatar();
+                    };
+                    finalImg.src = retryUrl;
                 }, retryDelay);
             } else {
-                setAvatarError(true);
-                setIsAvatarLoading(false);
+                getInitialsAvatar();
             }
         };
 
         img.src = url;
-    }, [retryCount, maxRetries, user?.avatar, getAvatarUrl]);
+    }, [retryCount, maxRetries, user?.avatar, getAvatarUrl, getInitialsAvatar, isGoogleAvatarUrl]);
 
-    // Clear any retry timeouts on unmount
+    // Set isMounted to false when component unmounts
     useEffect(() => {
         return () => {
+            isMounted.current = false;
             if (retryTimeoutRef.current) {
                 window.clearTimeout(retryTimeoutRef.current);
             }
@@ -185,21 +279,30 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
     // Update avatar URL when user or timestamp changes
     useEffect(() => {
         if (tempAvatarUrl) return;
+        if (!isMounted.current) return;
 
+        // Reset states
         setRetryCount(0);
         setAvatarError(false);
         setIsAvatarLoading(true);
-        setAvatarUrl(undefined);
 
         if (user?.avatar) {
-            const newAvatarUrl = getAvatarUrl(user.avatar);
-            console.log("ProfileSidebar: Setting new avatar URL with timestamp:", timestamp);
-            setAvatarUrl(newAvatarUrl);
-            loadAvatarImage(newAvatarUrl);
+            // Determine if this is a Google avatar URL
+            if (isGoogleAvatarUrl(user.avatar)) {
+                // For Google avatar URLs, just set the URL directly without processing
+                setAvatarUrl(user.avatar);
+                setIsAvatarLoading(false);
+            } else {
+                // For normal avatar URLs, process with timestamp
+                const newAvatarUrl = getAvatarUrl(user.avatar);
+                setAvatarUrl(newAvatarUrl);
+                loadAvatarImage(newAvatarUrl);
+            }
         } else {
             setIsAvatarLoading(false);
+            setAvatarUrl(undefined);
         }
-    }, [user?.avatar, timestamp, tempAvatarUrl, getAvatarUrl, loadAvatarImage]);
+    }, [user?.avatar, timestamp, tempAvatarUrl, getAvatarUrl, loadAvatarImage, isGoogleAvatarUrl]);
 
     const tabs = [
         { id: 'profile', label: 'Hồ sơ', icon: <FiUser />, delay: 0 },
@@ -208,18 +311,31 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
         { id: 'settings', label: 'Cài đặt', icon: <FiSettings />, delay: 0.15 },
     ];
 
+    // Get user initials for avatar fallback
+    const getUserInitials = (): string => {
+        if (!user?.fullName) return 'U';
+
+        const nameParts = user.fullName.trim().split(' ');
+        if (nameParts.length === 0) return 'U';
+
+        if (nameParts.length === 1) {
+            return nameParts[0].charAt(0).toUpperCase();
+        }
+
+        return (nameParts[0].charAt(0) + nameParts[nameParts.length - 1].charAt(0)).toUpperCase();
+    };
+
+    // Simplified handler for image error
     const handleImageError = () => {
-        console.error('ProfileSidebar: Failed to load avatar image in img element:', avatarUrl);
-        if (retryCount < maxRetries) {
-            setIsAvatarLoading(true);
-        } else {
-            setAvatarError(true);
-            setIsAvatarLoading(false);
+        if (avatarUrl && isGoogleAvatarUrl(avatarUrl)) {
+            // For Google avatars, immediately switch to initials
+            getInitialsAvatar();
+        } else if (retryCount >= maxRetries) {
+            getInitialsAvatar();
         }
     };
 
     const handleImageLoaded = () => {
-        console.log('ProfileSidebar: Avatar image loaded successfully in img element');
         setIsAvatarLoading(false);
         setAvatarError(false);
     };
@@ -253,6 +369,7 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
                                     </motion.div>
                                 )}
                             </AnimatePresence>
+
                             {avatarUrl && !avatarError ? (
                                 <img
                                     src={avatarUrl}
@@ -262,7 +379,9 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
                                     }`}
                                     onError={handleImageError}
                                     onLoad={handleImageLoaded}
-                                    key={`sidebar-avatar-${timestamp}-${retryCount}`}
+                                    key={`sidebar-avatar-${timestamp}`}
+                                    crossOrigin="anonymous"
+                                    referrerPolicy="no-referrer"
                                     onDoubleClick={(e) => {
                                         if (e.detail >= 3) {
                                             e.preventDefault();
@@ -271,8 +390,10 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
                                     }}
                                 />
                             ) : (
-                                <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center">
-                                    <FiUser className="w-14 h-14 text-gray-400 dark:text-gray-500" />
+                                <div className="w-full h-full bg-gradient-to-br from-primary to-accent dark:from-primary/80 dark:to-accent/80 flex items-center justify-center">
+                                    <span className="text-white text-3xl font-bold">
+                                        {getUserInitials()}
+                                    </span>
                                 </div>
                             )}
                         </div>
@@ -308,10 +429,30 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
                             {tempAvatarUrl || 'No temp URL'}<br/>
                             <span className="font-semibold">Error state:</span> {avatarError ? 'Error' : 'No error'}<br/>
                             <span className="font-semibold">Loading state:</span> {isAvatarLoading ? 'Loading' : 'Not loading'}<br/>
+                            <span className="font-semibold">Is Google Avatar:</span> {user?.avatar && isGoogleAvatarUrl(user.avatar) ? 'Yes' : 'No'}<br/>
                             <span className="font-semibold">Updating:</span> {isUpdatingAvatar ? 'Yes' : 'No'}<br/>
                             <span className="font-semibold">Checking:</span> {isCheckingAvailability ? 'Yes' : 'No'}<br/>
                             <span className="font-semibold">Retry count:</span> {retryCount}/{maxRetries}<br/>
-                            <span className="font-semibold">Timestamp:</span> {timestamp}
+                            <span className="font-semibold">Timestamp:</span> {timestamp}<br/>
+                            <button
+                                className="mt-1 bg-primary/10 p-1 rounded text-primary"
+                                onClick={() => {
+                                    setAvatarError(false);
+                                    setRetryCount(0);
+                                    setIsAvatarLoading(true);
+                                    setTimeout(() => {
+                                        if (user?.avatar) {
+                                            const refreshedUrl = getAvatarUrl(user.avatar, true);
+                                            setAvatarUrl(refreshedUrl);
+                                            loadAvatarImage(refreshedUrl);
+                                        } else {
+                                            setIsAvatarLoading(false);
+                                        }
+                                    }, 100);
+                                }}
+                            >
+                                Force Reload
+                            </button>
                         </motion.div>
                     )}
                 </AnimatePresence>
@@ -325,6 +466,8 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{user?.email || ''}</p>
                 </motion.div>
             </div>
+
+            {/* Navigation Tabs */}
             <motion.nav
                 className="mt-4 pb-6"
                 variants={tabsContainerVariants}
@@ -366,6 +509,56 @@ const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
                             </button>
                         </motion.li>
                     ))}
+
+                    {/* Social Login Buttons */}
+                    <motion.div
+                        className="mt-6 mb-4 pt-4 border-t border-gray-200 dark:border-gray-700"
+                        variants={tabItemVariants}
+                        custom={0.2}
+                        data-aos="fade-up"
+                        data-aos-delay="500"
+                    >
+                        <div className="px-2">
+                            <h4 className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-3">Liên kết tài khoản</h4>
+                            <div className="flex space-x-2">
+                                <motion.button
+                                    onClick={onGoogleLogin}
+                                    className={`flex-1 flex items-center justify-center py-2.5 px-4 rounded-lg transition-all duration-300 ${
+                                        isGoogleLinked
+                                            ? "bg-gray-100 text-gray-700 border border-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600"
+                                            : "bg-white text-[#4285F4] border border-[#4285F4] hover:bg-[#4285F4]/10 dark:bg-gray-800 dark:border-[#4285F4]/70"
+                                    }`}
+                                    variants={socialButtonVariants}
+                                    whileHover="hover"
+                                    whileTap="tap"
+                                >
+                                    <FaGoogle className="mr-2" />
+                                    <span className="text-sm font-medium truncate">
+                                        {isGoogleLinked ? "Đã liên kết" : "Google"}
+                                    </span>
+                                </motion.button>
+
+                                <motion.button
+                                    onClick={onFacebookLogin}
+                                    className={`flex-1 flex items-center justify-center py-2.5 px-4 rounded-lg transition-all duration-300 ${
+                                        isFacebookLinked
+                                            ? "bg-gray-100 text-gray-700 border border-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600"
+                                            : "bg-white text-[#1877F2] border border-[#1877F2] hover:bg-[#1877F2]/10 dark:bg-gray-800 dark:border-[#1877F2]/70"
+                                    }`}
+                                    variants={socialButtonVariants}
+                                    whileHover="hover"
+                                    whileTap="tap"
+                                >
+                                    <FaFacebookF className="mr-2" />
+                                    <span className="text-sm font-medium truncate">
+                                        {isFacebookLinked ? "Đã liên kết" : "Facebook"}
+                                    </span>
+                                </motion.button>
+                            </div>
+                        </div>
+                    </motion.div>
+
+                    {/* Logout Button */}
                     <motion.li
                         variants={tabItemVariants}
                         custom={0.2}

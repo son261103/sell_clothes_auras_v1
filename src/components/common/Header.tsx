@@ -3,17 +3,27 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import Navbar from './Navbar';
 import useAuth from '../../hooks/useAuth';
-import useProfile from '../../hooks/useProfile'; // Import useProfile
+import useProfile from '../../hooks/useProfile';
 import useCart from '../../hooks/useCart';
 import useProduct from '../../hooks/useProduct';
 import { GiStarSwirl } from 'react-icons/gi';
 import { FiSearch, FiUser, FiHeart, FiShoppingBag, FiSun, FiMoon, FiMenu, FiX, FiMail, FiLogOut, FiUserPlus, FiLogIn, FiPackage } from 'react-icons/fi';
 import { ProductResponseDTO } from '../../types/product.types';
+import GlobalAuthService from '../../services/global.service';
 
 interface HeaderProps {
     isDarkMode: boolean;
     setIsDarkMode: (isDark: boolean) => void;
 }
+
+// Check if a URL is a Google avatar URL
+const isGoogleAvatarUrl = (url: string): boolean => {
+    return url && (
+        url.includes('googleusercontent.com') ||
+        url.includes('google.com') ||
+        url.includes('googleapis.com')
+    );
+};
 
 const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -24,6 +34,8 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
     const [suggestions, setSuggestions] = useState<ProductResponseDTO[]>([]);
     const [avatarError, setAvatarError] = useState(false);
     const [profileInitialized, setProfileInitialized] = useState(false);
+    const [forceRefresh, setForceRefresh] = useState(0);
+
     const searchRef = useRef<HTMLDivElement>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const userMenuRef = useRef<HTMLDivElement>(null);
@@ -40,31 +52,48 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
     const { itemCount } = useCart();
     const { searchProducts } = useProduct();
 
-    // Generate a stable avatar URL that only changes when the actual avatar URL changes
-    // This prevents constant re-fetching of the avatar on re-renders
+    // Force profile refresh when auth state changes
+    useEffect(() => {
+        if (isAuthenticated && accessToken) {
+            // Reset profile initialized state when auth changes
+            setProfileInitialized(false);
+
+            // Force a refresh of the avatar by updating timestamp
+            if (isAuthenticated) {
+                sessionStorage.removeItem('avatarTimestamp');
+                sessionStorage.setItem('avatarTimestamp', Date.now().toString());
+
+                // Force re-render by updating state
+                setForceRefresh(prev => prev + 1);
+
+                // Reset avatar error state
+                setAvatarError(false);
+            }
+        }
+    }, [isAuthenticated, accessToken]);
+
+    // Generate a stable avatar URL that only changes when needed
     const avatarUrl = useMemo(() => {
         const url = profile?.avatar || user?.avatar;
         if (!url || avatarError) return '';
 
-        // Add a timestamp only once per session, not on every render
-        // This will refresh the avatar only on page reload, not on every component re-render
-        const cacheBuster = sessionStorage.getItem('avatarTimestamp') || Date.now().toString();
-
-        // Store the timestamp in sessionStorage to keep it consistent during the session
-        if (!sessionStorage.getItem('avatarTimestamp')) {
-            sessionStorage.setItem('avatarTimestamp', cacheBuster);
+        // Special handling for Google avatar URLs to prevent CORS issues
+        if (isGoogleAvatarUrl(url)) {
+            return url; // Google URLs should be used as-is without modifications
         }
 
+        // For non-Google URLs, add cache busting
+        const cacheBuster = sessionStorage.getItem('avatarTimestamp') || Date.now().toString();
         return url.includes('?') ? `${url}&t=${cacheBuster}` : `${url}?t=${cacheBuster}`;
-    }, [profile?.avatar, user?.avatar, avatarError]);
+    }, [profile?.avatar, user?.avatar, avatarError, forceRefresh]);
 
-    // Chủ động tải profile khi component mount hoặc auth state thay đổi
+    // Proactively fetch profile
     useEffect(() => {
         const fetchProfileIfNeeded = async () => {
             if (isAuthenticated && accessToken && !profileInitialized && !isProfileLoading) {
                 try {
                     console.log('Proactively fetching profile in Header');
-                    await getProfile(true); // force=true để bỏ qua cache
+                    await getProfile(true); // force=true to bypass cache
                     setProfileInitialized(true);
                 } catch (err) {
                     console.error('Error fetching profile in Header:', err);
@@ -72,26 +101,31 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
             }
         };
 
-        fetchProfileIfNeeded();
-    }, [isAuthenticated, accessToken, getProfile, isProfileLoading, profileInitialized]);
+        // Small delay to ensure auth state is fully updated
+        const timer = setTimeout(() => {
+            fetchProfileIfNeeded();
+        }, 300);
 
-    // Reset profileInitialized khi đăng xuất
+        return () => clearTimeout(timer);
+    }, [isAuthenticated, accessToken, getProfile, isProfileLoading, profileInitialized, forceRefresh]);
+
+    // Reset profileInitialized on logout
     useEffect(() => {
         if (!isAuthenticated || !accessToken) {
             setProfileInitialized(false);
-            // Clear avatar timestamp on logout to ensure fresh avatar on next login
+            // Clear avatar timestamp on logout
             sessionStorage.removeItem('avatarTimestamp');
         }
     }, [isAuthenticated, accessToken]);
 
-    // Xử lý hiệu ứng scroll
+    // Scroll effect
     useEffect(() => {
         const handleScroll = () => setIsScrolled(window.scrollY > 50);
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
-    // Đóng menu người dùng khi click bên ngoài
+    // Close user menu when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             const target = event.target as HTMLElement;
@@ -103,7 +137,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isUserMenuOpen]);
 
-    // Xử lý focus và click ngoài ô tìm kiếm
+    // Handle search focus and outside clicks
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             const target = event.target as HTMLElement;
@@ -119,7 +153,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isSearchActive]);
 
-    // Lấy gợi ý sản phẩm khi nhập từ khóa tìm kiếm
+    // Fetch search suggestions
     useEffect(() => {
         const fetchSuggestions = async () => {
             if (searchTerm.length >= 3) {
@@ -143,7 +177,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         return () => clearTimeout(timer);
     }, [searchTerm, searchProducts]);
 
-    // Xử lý tìm kiếm
+    // Handle search submission
     const handleSearch = (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (searchTerm.trim()) {
@@ -156,7 +190,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         }
     };
 
-    // Chuyển đổi theme
+    // Toggle theme
     const toggleTheme = () => {
         document.documentElement.classList.toggle('dark', !isDarkMode);
         setIsDarkMode(!isDarkMode);
@@ -164,14 +198,23 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         toast.success(`Đã chuyển sang chế độ ${isDarkMode ? 'sáng' : 'tối'}`);
     };
 
-    // Xử lý đăng xuất
+    // Handle logout
     const handleLogout = async () => {
         try {
+            // Get email before logout to clear Google state
+            const email = getUserEmail();
+
             await signOut();
+
+            // Clear Google sign-in state if needed
+            if (email) {
+                GlobalAuthService.clearGoogleState(email);
+            }
+
             toast.success('Đăng xuất thành công!');
             setIsUserMenuOpen(false);
-            setAvatarError(false); // Reset avatar error state on logout
-            sessionStorage.removeItem('avatarTimestamp'); // Clear avatar timestamp
+            setAvatarError(false);
+            sessionStorage.removeItem('avatarTimestamp');
             navigate('/');
         } catch (err) {
             toast.error('Đăng xuất thất bại.');
@@ -179,21 +222,21 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         }
     };
 
-    // Lấy username từ nhiều nguồn
+    // Get username from profile or user
     const getUsername = (): string => {
         if (profile?.username) return profile.username;
         if (user?.username) return user.username;
         return 'User';
     };
 
-    // Lấy email người dùng
+    // Get email from profile or user
     const getUserEmail = (): string => {
         if (profile?.email) return profile.email;
         if (user?.email) return user.email;
         return '';
     };
 
-    // Lấy thời gian tham gia
+    // Get join date
     const getJoinDate = (): string => {
         if (profile?.createdAt) {
             try {
@@ -206,7 +249,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         return 'Không xác định';
     };
 
-    // Hiển thị avatar hoặc icon user mặc định
+    // Render avatar or default icon
     const renderAvatar = () => {
         if (isAuthenticated) {
             if (avatarUrl && !avatarError) {
@@ -217,6 +260,8 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                             alt="Avatar"
                             className="w-6 h-6 rounded-full object-cover border-2 border-primary"
                             onError={() => setAvatarError(true)}
+                            crossOrigin="anonymous"
+                            referrerPolicy="no-referrer"
                         />
                         <span className="absolute bottom-0 right-0 w-2 h-2 bg-green-500 rounded-full border border-white dark:border-darkBackground"></span>
                     </div>
@@ -238,7 +283,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         }
     };
 
-    // Avatar lớn cho dropdown menu
+    // Large avatar for dropdown menu
     const renderLargeAvatar = () => {
         if (avatarUrl && !avatarError) {
             return (
@@ -247,10 +292,12 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                     alt="Avatar"
                     className="w-12 h-12 rounded-full object-cover border-2 border-primary"
                     onError={() => setAvatarError(true)}
+                    crossOrigin="anonymous"
+                    referrerPolicy="no-referrer"
                 />
             );
         } else {
-            // Avatar placeholder lớn
+            // Large avatar placeholder
             const username = getUsername();
             const initial = username ? username.charAt(0).toUpperCase() : 'U';
 
@@ -262,7 +309,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
         }
     };
 
-    // Log profile state to debug
+    // Debug logging for profile state
     useEffect(() => {
         if (profile) {
             console.log('Profile state updated in Header:', {
@@ -291,7 +338,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
             </div>
 
             <div className="container mx-auto px-4 py-2.5 flex items-center justify-between relative">
-                {/* Nút menu mobile */}
+                {/* Mobile menu button */}
                 <button
                     className="md:hidden text-primary transition z-50 hover:text-accent"
                     onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -328,9 +375,9 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
 
                 <Navbar />
 
-                {/* Các biểu tượng bên phải */}
+                {/* Right icons */}
                 <div className="flex items-center space-x-1 md:space-x-3 z-50">
-                    {/* Tìm kiếm */}
+                    {/* Search */}
                     <div className="relative" ref={searchRef}>
                         <button
                             className="text-primary transition hover:text-accent p-1.5 rounded-full hover:bg-primary/10"
@@ -384,7 +431,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                         </div>
                     </div>
 
-                    {/* Giỏ hàng */}
+                    {/* Cart */}
                     <NavLink
                         to="/cart"
                         className={({ isActive }) =>
@@ -411,7 +458,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                         )}
                     </NavLink>
 
-                    {/* Chuyển đổi theme */}
+                    {/* Theme toggle */}
                     <button
                         onClick={toggleTheme}
                         className="text-primary transition hover:text-accent p-1.5 rounded-full hover:bg-primary/10"
@@ -420,7 +467,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                         {isDarkMode ? <FiSun className="w-5 h-5" /> : <FiMoon className="w-5 h-5" />}
                     </button>
 
-                    {/* Menu người dùng - ĐƯỢC CẢI TIẾN */}
+                    {/* User menu - ENHANCED */}
                     <div className="relative user-menu-container" ref={userMenuRef}>
                         <button
                             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
@@ -445,7 +492,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                             </svg>
                         </button>
 
-                        {/* Dropdown menu - Được thiết kế lại */}
+                        {/* Dropdown menu - Redesigned */}
                         <div
                             className={`absolute right-0 mt-2 origin-top-right transition-all duration-300 transform z-50 bg-white dark:bg-darkBackground rounded-lg overflow-hidden shadow-xl ring-1 ring-black ring-opacity-5 ${
                                 isUserMenuOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'
@@ -568,7 +615,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                 </div>
             </div>
 
-            {/* Menu mobile */}
+            {/* Mobile menu */}
             <div
                 className={`md:hidden fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity duration-300 ${
                     isMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -590,7 +637,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                     </button>
                 </div>
 
-                {/* Tìm kiếm mobile */}
+                {/* Mobile search */}
                 <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
                     <form onSubmit={handleSearch} className="flex items-center bg-gray-100 dark:bg-secondary/20 rounded-full overflow-hidden">
                         <input
@@ -634,7 +681,7 @@ const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
                     <Navbar isMobile onLinkClick={() => setIsMenuOpen(false)} />
                 </div>
 
-                {/* User section mobile - CẢI TIẾN */}
+                {/* Mobile user section - ENHANCED */}
                 <div className="p-4 border-t border-gray-200 dark:border-gray-700">
                     {isAuthenticated ? (
                         <>
