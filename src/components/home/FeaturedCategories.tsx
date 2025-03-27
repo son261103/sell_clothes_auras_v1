@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
 import { motion, useInView, useScroll, useTransform } from 'framer-motion';
 import 'react-lazy-load-image-component/src/effects/blur.css';
@@ -16,6 +16,7 @@ interface Category {
 const FeaturedCategories: React.FC = () => {
     const [hoveredCategory, setHoveredCategory] = useState<number | null>(null);
     const [expandedCategory, setExpandedCategory] = useState<number | null>(null);
+    const navigate = useNavigate();
 
     const containerRef = useRef<HTMLDivElement>(null);
     const isInView = useInView(containerRef, { once: false, amount: 0.2 });
@@ -70,6 +71,23 @@ const FeaturedCategories: React.FC = () => {
             setExpandedCategory(null);
         } else {
             setExpandedCategory(id);
+        }
+    };
+
+    // Handle view all categories
+    const handleViewAll = (e: React.MouseEvent) => {
+        e.preventDefault();
+        navigate('/products');
+    };
+
+    // Handle category click
+    const handleCategoryClick = (e: React.MouseEvent, isExpanded: boolean) => {
+        // If already expanded, navigate to products page
+        if (isExpanded) {
+            navigate('/products');
+        } else {
+            // Otherwise just prevent default to allow expanding
+            e.preventDefault();
         }
     };
 
@@ -135,8 +153,9 @@ const FeaturedCategories: React.FC = () => {
                         whileTap={{ scale: 0.95 }}
                     >
                         <Link
-                            to="/collection/featured"
+                            to="/products"
                             className="text-primary hover:text-primary/80 transition flex items-center gap-2 font-semibold text-sm group bg-primary/10 px-4 py-2 rounded-full"
+                            onClick={handleViewAll}
                         >
                             Xem Tất Cả
                             <svg
@@ -187,12 +206,9 @@ const FeaturedCategories: React.FC = () => {
                                 }}
                             >
                                 <Link
-                                    to={`/category/${category.name.toLowerCase()}`}
+                                    to="/products"
                                     className="block w-full h-full"
-                                    onClick={e => {
-                                        // Only prevent default if we're expanding, otherwise navigate
-                                        if (!isExpanded) e.preventDefault();
-                                    }}
+                                    onClick={e => handleCategoryClick(e, isExpanded)}
                                 >
                                     <motion.div
                                         className="absolute inset-0 bg-gradient-to-t from-primary/60 via-primary/20 to-transparent z-10 transition-colors duration-500"
