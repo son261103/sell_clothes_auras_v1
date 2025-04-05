@@ -29,17 +29,18 @@ interface ProductFiltersProps {
     onResetFilters: () => void;
     isMobile?: boolean;
     onClose?: () => void;
-    expanded?: boolean; // New prop for expanded state
+    expanded?: boolean; // For expanded state
 
-    // Modified to accept all categories and brands, not just active ones
+    // Category and brand data
     categories?: CategoryResponseDTO[];
     brands?: BrandResponseDTO[];
-
-    // Subcategories are now loaded from the full hierarchy
     allCategories?: CategoryResponseDTO[]; // All categories including subcategories
 
     // Loading state
     isLoading?: boolean;
+
+    // Đừng áp dụng bộ lọc ngay khi thay đổi - chỉ gọi filterChange để cập nhật UI
+    dontApplyFiltersImmediately?: boolean;
 }
 
 const FilterSection: React.FC<{
@@ -47,8 +48,8 @@ const FilterSection: React.FC<{
     children: React.ReactNode;
     defaultOpen?: boolean;
     count?: number;
-    badge?: number; // New prop for selected count badge
-    onClear?: () => void; // New prop for clear action
+    badge?: number; // Selected count badge
+    onClear?: () => void; // Clear action
     showClear?: boolean; // Whether to show clear button
     disabled?: boolean; // Disabled state
 }> = ({
@@ -151,9 +152,7 @@ const PriceRangeInput: React.FC<{
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const rawValue = e.target.value;
         setInputValue(rawValue);
-
         // Don't immediately update for every keystroke
-        // The actual value will be updated on blur
     };
 
     const handleBlur = () => {
@@ -212,7 +211,8 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
                                                                 brands = [],
                                                                 allCategories = [],
                                                                 expanded = false,
-                                                                isLoading = false
+                                                                isLoading = false,
+                                                                dontApplyFiltersImmediately = false
                                                             }) => {
     const [minPrice, setMinPrice] = useState<number | null>(priceRange.min);
     const [maxPrice, setMaxPrice] = useState<number | null>(priceRange.max);
@@ -231,40 +231,54 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
 
     // Process categories when allCategories changes
     useEffect(() => {
-        // Verify we have categories to work with
+        // Skip if no categories to process
         if (!allCategories || allCategories.length === 0) {
-            console.log('No categories available');
             setProcessedCategories([]);
             return;
         }
 
         console.log(`Processing ${allCategories.length} categories`);
 
-        // Create new objects instead of modifying the originals
-        const categoriesWithValidLevels = allCategories.map(cat => ({
-            ...cat,
-            level: cat.level !== undefined ? cat.level : (cat.parentId ? 1 : 0)
-        }));
+        try {
+            // Create a Map for faster lookups and to eliminate duplicates
+            const categoryMap = new Map<number, CategoryResponseDTO>();
 
-        // Sort categories by level and then by name
-        const sortedCategories = [...categoriesWithValidLevels].sort((a, b) => {
-            if (a.level !== b.level) return a.level - b.level;
-            return a.name.localeCompare(b.name);
-        });
+            // First pass: add all categories to the map with correct level
+            allCategories.forEach((cat: CategoryResponseDTO) => {
+                if (cat && cat.categoryId) {
+                    // Create a deep copy to avoid mutation issues
+                    const category = {
+                        ...cat,
+                        // Ensure level is set properly
+                        level: cat.level !== undefined ? cat.level : (cat.parentId ? 1 : 0)
+                    };
 
-        console.log(`Processed ${sortedCategories.length} categories`);
+                    // Only add each category once (by ID)
+                    categoryMap.set(category.categoryId, category);
+                }
+            });
 
-        // Sample output for debugging
-        if (sortedCategories.length > 0) {
-            console.log('Sample categories:', sortedCategories.slice(0, 3).map(c => ({
-                id: c.categoryId,
-                name: c.name,
-                level: c.level,
-                parentId: c.parentId
-            })));
+            // Convert to array and sort
+            const sorted = Array.from(categoryMap.values()).sort((a, b) => {
+                // Sort by level first
+                if (a.level !== b.level) return a.level - b.level;
+                // Then by name
+                return a.name.localeCompare(b.name);
+            });
+
+            console.log(`Processed ${sorted.length} unique categories`);
+            setProcessedCategories(sorted);
+        } catch (err) {
+            console.error("Error processing categories:", err);
+            // Fallback to simple processing
+            const simpleSorted = [...allCategories].sort((a, b) => {
+                const levelA = a.level !== undefined ? a.level : (a.parentId ? 1 : 0);
+                const levelB = b.level !== undefined ? b.level : (b.parentId ? 1 : 0);
+                if (levelA !== levelB) return levelA - levelB;
+                return a.name.localeCompare(b.name);
+            });
+            setProcessedCategories(simpleSorted);
         }
-
-        setProcessedCategories(sortedCategories);
     }, [allCategories]);
 
     // Update local state when props change
@@ -283,33 +297,25 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
 
     // Auto-expand categories that have selected subcategories
     useEffect(() => {
-        if (isUpdatingRef.current) return;
+        if (selectedCategories.length > 0 && processedCategories.length > 0) {
+            const parentsToExpand = { ...expandedParentCategories };
+            let changed = false;
 
-        const categoriesChanged =
-            selectedCategories.length !== lastCategoriesRef.current.length ||
-            selectedCategories.some(id => !lastCategoriesRef.current.includes(id));
-
-        if (categoriesChanged && selectedCategories.length > 0 && processedCategories.length > 0) {
             // Find selected subcategories
-            const selectedSubcategories = processedCategories.filter(
-                cat => selectedCategories.includes(cat.categoryId) && cat.parentId !== null
-            );
-
-            // If there are selected subcategories, expand their parent categories
-            if (selectedSubcategories.length > 0) {
-                const parentsToExpand: Record<number, boolean> = { ...expandedParentCategories };
-
-                selectedSubcategories.forEach(subcat => {
-                    if (subcat.parentId) {
-                        parentsToExpand[subcat.parentId] = true;
+            processedCategories.forEach(cat => {
+                if (selectedCategories.includes(cat.categoryId) && cat.parentId) {
+                    // Auto-expand the parent of this selected subcategory
+                    if (!parentsToExpand[cat.parentId]) {
+                        parentsToExpand[cat.parentId] = true;
+                        changed = true;
                     }
-                });
+                }
+            });
 
+            // Only update state if changes were made
+            if (changed) {
                 setExpandedParentCategories(parentsToExpand);
             }
-
-            // Update reference
-            lastCategoriesRef.current = [...selectedCategories];
         }
     }, [selectedCategories, processedCategories, expandedParentCategories]);
 
@@ -330,16 +336,22 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
     const applyFiltersWithDebounce = useCallback((filters: FilterParams) => {
         if (isLoading || isFiltering) return;
 
+        // Nếu không áp dụng ngay, chỉ gọi onFilterChange để cập nhật UI
+        if (dontApplyFiltersImmediately) {
+            onFilterChange(filters);
+            return;
+        }
+
         setIsFiltering(true);
         isUpdatingRef.current = true;
 
         // Clear any existing timeout
         if (filterTimeoutRef.current) {
-            clearTimeout(filterTimeoutRef.current);
+            window.clearTimeout(filterTimeoutRef.current);
         }
 
         // Set a new timeout
-        filterTimeoutRef.current = setTimeout(() => {
+        filterTimeoutRef.current = window.setTimeout(() => {
             onFilterChange(filters);
 
             // Reset after a delay to allow rendering to complete
@@ -348,7 +360,7 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
                 isUpdatingRef.current = false;
             }, 300);
         }, 300);
-    }, [onFilterChange, isLoading, isFiltering]);
+    }, [onFilterChange, isLoading, isFiltering, dontApplyFiltersImmediately]);
 
     // Change price range with debounce
     useEffect(() => {
@@ -466,26 +478,46 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
 
     // Group categories by parent
     const categoryGroups = useMemo(() => {
-        // Filter categories based on search term first
-        const filteredCats = categorySearchTerm === ''
-            ? processedCategories
-            : processedCategories.filter(category =>
-                category.name.toLowerCase().includes(categorySearchTerm.toLowerCase())
-            );
+        if (!processedCategories.length) {
+            return { parents: [], groups: {} as Record<number, CategoryResponseDTO[]> };
+        }
 
-        // Get all parent categories (level 0)
-        const parents = filteredCats.filter(cat => cat.level === 0);
+        try {
+            // Filter categories based on search term first
+            const filteredCats = categorySearchTerm === ''
+                ? processedCategories
+                : processedCategories.filter(category =>
+                    category.name.toLowerCase().includes(categorySearchTerm.toLowerCase())
+                );
 
-        // Group subcategories by parent
-        const groups: Record<number, CategoryResponseDTO[]> = {};
+            // Get parent categories (level 0)
+            const parents = filteredCats.filter(cat => cat.level === 0 || !cat.parentId);
 
-        parents.forEach(parent => {
-            groups[parent.categoryId] = filteredCats.filter(
-                cat => cat.parentId === parent.categoryId
-            );
-        });
+            // Create groups object
+            const groups: Record<number, CategoryResponseDTO[]> = {};
 
-        return { parents, groups };
+            // Initialize all parent groups with empty arrays
+            parents.forEach(parent => {
+                groups[parent.categoryId] = [];
+            });
+
+            // Group subcategories by parent
+            filteredCats.forEach(cat => {
+                if (cat.parentId && groups[cat.parentId] !== undefined) {
+                    groups[cat.parentId].push(cat);
+                }
+            });
+
+            // Sort subcategories by name in each group
+            Object.keys(groups).forEach(parentId => {
+                groups[Number(parentId)].sort((a, b) => a.name.localeCompare(b.name));
+            });
+
+            return { parents, groups };
+        } catch (err) {
+            console.error("Error creating category groups:", err);
+            return { parents: [], groups: {} as Record<number, CategoryResponseDTO[]> };
+        }
     }, [processedCategories, categorySearchTerm]);
 
     // Filter brands based on search term
@@ -503,7 +535,7 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
     useEffect(() => {
         return () => {
             if (filterTimeoutRef.current) {
-                clearTimeout(filterTimeoutRef.current);
+                window.clearTimeout(filterTimeoutRef.current);
             }
         };
     }, []);
@@ -513,7 +545,7 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
         <div className="absolute inset-0 bg-white/50 dark:bg-gray-800/50 flex items-center justify-center z-50 rounded-lg">
             <div className="flex flex-col items-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary dark:border-accent"></div>
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Đang áp dụng...</p>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Đang xử lý...</p>
             </div>
         </div>
     );
@@ -796,7 +828,7 @@ const ProductFilters: React.FC<ProductFiltersProps> = memo(({
                 </FilterSection>
 
                 {/* Apply Filters Button for Mobile */}
-                {isMobile && (
+                {isMobile && !dontApplyFiltersImmediately && (
                     <motion.div
                         className="pt-4 border-t border-gray-200 dark:border-gray-700"
                         initial={{ opacity: 0, y: 10 }}

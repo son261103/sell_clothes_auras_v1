@@ -15,7 +15,9 @@ interface ProductGridProps {
     categories?: CategoryResponseDTO[];
     brands?: BrandResponseDTO[];
     expanded?: boolean; // For expanding the grid width
-    onOpenQuickView?: (product: ProductResponseDTO) => void; // New prop for opening quick view
+    onOpenQuickView?: (product: ProductResponseDTO) => void; // For opening quick view
+    onCategoryClick?: (category: CategoryResponseDTO) => void; // For navigating to category page
+    onBrandClick?: (brand: BrandResponseDTO) => void; // For navigating to brand page
 }
 
 const ProductGrid: React.FC<ProductGridProps> = memo(({
@@ -25,7 +27,9 @@ const ProductGrid: React.FC<ProductGridProps> = memo(({
                                                           categories = [],
                                                           brands = [],
                                                           expanded = true,
-                                                          onOpenQuickView
+                                                          onOpenQuickView,
+                                                          onCategoryClick,
+                                                          onBrandClick
                                                       }) => {
     const navigate = useNavigate();
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
@@ -53,17 +57,25 @@ const ProductGrid: React.FC<ProductGridProps> = memo(({
         };
     }, []);
 
-    // Navigate to category page - using useCallback to avoid unnecessary re-renders
-    const handleCategoryClick = useCallback((slug: string) => {
-        navigate(`/category/${slug}`);
+    // Navigate to category page - using the provided handler or defaulting to navigate
+    const handleCategoryClick = useCallback((category: CategoryResponseDTO) => {
+        if (onCategoryClick) {
+            onCategoryClick(category);
+        } else {
+            navigate(`/category/${category.slug}`);
+        }
         setShowCategoryDropdown(false);
-    }, [navigate]);
+    }, [navigate, onCategoryClick]);
 
-    // Navigate to brand page
-    const handleBrandClick = useCallback((slug: string) => {
-        navigate(`/brand/${slug}`);
+    // Navigate to brand page - using the provided handler or defaulting to navigate
+    const handleBrandClick = useCallback((brand: BrandResponseDTO) => {
+        if (onBrandClick) {
+            onBrandClick(brand);
+        } else {
+            navigate(`/brand/${brand.slug}`);
+        }
         setShowBrandDropdown(false);
-    }, [navigate]);
+    }, [navigate, onBrandClick]);
 
     // Organize categories by hierarchy
     const organizedCategories = useMemo(() => {
@@ -154,7 +166,7 @@ const ProductGrid: React.FC<ProductGridProps> = memo(({
                     {organizedCategories.parents.map(category => (
                         <div key={category.categoryId} className="transition-colors duration-200">
                             <button
-                                onClick={() => handleCategoryClick(category.slug)}
+                                onClick={() => handleCategoryClick(category)}
                                 className="text-left w-full py-1 px-2 rounded hover:bg-primary/10 dark:hover:bg-primary/20 text-gray-800 dark:text-gray-200 font-medium"
                             >
                                 {category.name}
@@ -166,7 +178,7 @@ const ProductGrid: React.FC<ProductGridProps> = memo(({
                                     {organizedCategories.children.get(category.categoryId)?.map(subcat => (
                                         <button
                                             key={subcat.categoryId}
-                                            onClick={() => handleCategoryClick(subcat.slug)}
+                                            onClick={() => handleCategoryClick(subcat)}
                                             className="text-left w-full py-1 px-2 rounded hover:bg-primary/10 dark:hover:bg-primary/20 text-gray-600 dark:text-gray-400 text-sm"
                                         >
                                             {subcat.name}
@@ -196,7 +208,7 @@ const ProductGrid: React.FC<ProductGridProps> = memo(({
                     {brands.map(brand => (
                         <button
                             key={brand.brandId}
-                            onClick={() => handleBrandClick(brand.slug)}
+                            onClick={() => handleBrandClick(brand)}
                             className="text-left py-1 px-2 rounded hover:bg-accent/10 dark:hover:bg-accent/20 text-gray-800 dark:text-gray-200"
                         >
                             {brand.name}
@@ -217,7 +229,7 @@ const ProductGrid: React.FC<ProductGridProps> = memo(({
                             <motion.button
                                 key={category.categoryId}
                                 className="px-3.5 py-2 bg-primary/10 dark:bg-primary/20 text-primary dark:text-accent text-sm rounded-full whitespace-nowrap flex-shrink-0 hover:bg-primary/20 dark:hover:bg-primary/30 transition-all duration-200 shadow-sm border border-primary/10 dark:border-primary/30"
-                                onClick={() => handleCategoryClick(category.slug)}
+                                onClick={() => handleCategoryClick(category)}
                                 type="button"
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
@@ -246,7 +258,7 @@ const ProductGrid: React.FC<ProductGridProps> = memo(({
                             <motion.button
                                 key={brand.brandId}
                                 className="px-3.5 py-2 bg-accent/10 dark:bg-accent/20 text-accent text-sm rounded-full whitespace-nowrap flex-shrink-0 hover:bg-accent/20 dark:hover:bg-accent/30 transition-all duration-200 shadow-sm border border-accent/10 dark:border-accent/30"
-                                onClick={() => handleBrandClick(brand.slug)}
+                                onClick={() => handleBrandClick(brand)}
                                 type="button"
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}

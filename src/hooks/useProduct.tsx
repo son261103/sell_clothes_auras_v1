@@ -13,14 +13,12 @@ import {
     fetchLatestProductsSuccess,
     fetchOnSaleProductsSuccess,
     setSearchTerm,
-    // Cập nhật import để sử dụng với mảng
     setCategoryIds,
     setBrandIds,
     addCategoryId,
     removeCategoryId,
     addBrandId,
     removeBrandId,
-    // Giữ lại các imports cũ cho tương thích ngược
     setSelectedCategory,
     setSelectedBrand,
     setPriceRange,
@@ -48,10 +46,8 @@ import {
     selectPageSize,
     selectTotalPages,
     selectSearchTerm,
-    // Cập nhật selectors để sử dụng với mảng
     selectSelectedCategories,
     selectSelectedBrands,
-    // Giữ lại các selectors cũ cho tương thích ngược
     selectSelectedCategory,
     selectSelectedBrand,
     selectPriceRange,
@@ -62,7 +58,6 @@ import {
     selectBrands,
     selectSortBy,
     selectSortDir,
-    // Thêm selectors mới hỗ trợ hiển thị tên
     selectSelectedCategoryNames,
     selectSelectedBrandNames
 } from '../redux/selectors/productSelectors';
@@ -78,6 +73,9 @@ import { useRef, useCallback } from 'react';
 
 const useProduct = () => {
     const dispatch = useDispatch<AppDispatch>();
+
+    // Set default page size to 15 instead of 12
+    const DEFAULT_PAGE_SIZE = 15;
 
     const products = useSelector(selectProducts);
     const totalProducts = useSelector(selectTotalProducts);
@@ -95,15 +93,15 @@ const useProduct = () => {
     const totalPages = useSelector(selectTotalPages);
     const searchTerm = useSelector(selectSearchTerm);
 
-    // Sử dụng selectors mới (mảng)
+    // Use array-based selectors for multi-selection
     const selectedCategories = useSelector(selectSelectedCategories);
     const selectedBrands = useSelector(selectSelectedBrands);
 
-    // Giữ lại selectors cũ cho tương thích ngược
+    // Maintain backward compatibility
     const selectedCategory = useSelector(selectSelectedCategory);
     const selectedBrand = useSelector(selectSelectedBrand);
 
-    // Thêm selectors mới hiển thị tên
+    // Display names for selected filters
     const selectedCategoryNames = useSelector(selectSelectedCategoryNames);
     const selectedBrandNames = useSelector(selectSelectedBrandNames);
 
@@ -137,12 +135,25 @@ const useProduct = () => {
         return JSON.stringify(params, Object.keys(params).sort());
     };
 
+    // Initialize page size on hook initialization
+    useCallback(() => {
+        // Only set if different from default to avoid unnecessary state updates
+        if (pageSize !== DEFAULT_PAGE_SIZE) {
+            dispatch(setPageSize(DEFAULT_PAGE_SIZE));
+        }
+    }, [dispatch, pageSize]);
+
     const getProducts = async (params: ProductFilterParams = {}): Promise<PageResponse<ProductResponseDTO>> => {
         const paramSignature = getParamsSignature(params);
         const currentTime = Date.now();
         const isSameRequest = paramSignature === lastRequestRef.current.signature;
         const isRecentRequest = currentTime - lastRequestRef.current.timestamp < 2000;
         const isRequestInProgress = lastRequestRef.current.inProgress;
+
+        // Always ensure page size is set correctly
+        if (!params.size) {
+            params.size = DEFAULT_PAGE_SIZE;
+        }
 
         if ((isSameRequest && isRecentRequest) || (isSameRequest && isRequestInProgress)) {
             console.log('Skipping duplicate request with signature:', paramSignature);
@@ -180,19 +191,21 @@ const useProduct = () => {
 
         dispatch(fetchProductsStart());
         try {
-            // Cập nhật params để hỗ trợ mảng danh mục và thương hiệu
+            // Prepare filter parameters
             const finalParams: ProductFilterParams = {
                 ...params,
+                size: params.size || DEFAULT_PAGE_SIZE,
                 sortBy: params.sortBy || sortBy || 'createdAt',
                 sortDir: params.sortDir || sortDir || 'desc'
             };
 
-            // Nếu categoryIds hoặc brandIds không được chỉ định trong tham số,
-            // nhưng chúng ta đã có các ID được chọn trong state, thêm chúng vào finalParams
+            // Implement AND logic between different attributes and OR logic within the same attribute
+            // If we have selected categories in state but none in params, use the ones from state
             if (!params.categoryIds && !params.categoryId && selectedCategories.length > 0) {
                 finalParams.categoryIds = selectedCategories;
             }
 
+            // If we have selected brands in state but none in params, use the ones from state
             if (!params.brandIds && !params.brandId && selectedBrands.length > 0) {
                 finalParams.brandIds = selectedBrands;
             }
@@ -207,6 +220,7 @@ const useProduct = () => {
                 throw new Error('Invalid API response structure');
             }
 
+            // Ensure all products have default category and brand objects if missing
             response.content = response.content.map(product => {
                 if (!product.category) {
                     product.category = { categoryId: 0, name: 'Uncategorized', slug: 'uncategorized', status: true, level: 0 };
@@ -217,6 +231,7 @@ const useProduct = () => {
                 return product;
             });
 
+            // Log sample product for debugging
             if (response.content.length > 0) {
                 const sample = response.content[0];
                 console.log('Sample product:', {
@@ -250,19 +265,20 @@ const useProduct = () => {
         const isRecentRequest = currentTime - lastSlugRequestRef.current.timestamp < 2000;
         const isRequestInProgress = lastSlugRequestRef.current.inProgress;
 
-        // Nếu đã có selectedProduct với slug này và dữ liệu đầy đủ, trả về cached data
+        // If we already have this product with complete data, return from cache
         if (selectedProduct && selectedProduct.slug === slug && productImages.length > 0 && productVariants.length > 0 && relatedProducts.length > 0) {
-            console.log('Skipping fetch, using fully cached product for slug:', slug);
+            console.log('Using fully cached product for slug:', slug);
             return selectedProduct;
         }
 
-        // Nếu request trùng lặp hoặc đang xử lý, không reject mà trả về promise chờ dữ liệu
+        // If duplicate request, wait for the original request to complete
         if ((isSameRequest && isRecentRequest) || (isSameRequest && isRequestInProgress)) {
             console.log('Skipping duplicate request for slug:', slug);
             if (selectedProduct && selectedProduct.slug === slug) {
-                return selectedProduct; // Trả về dữ liệu hiện tại nếu có
+                return selectedProduct; // Return current data if available
             }
-            // Trả về promise chờ dữ liệu từ request đang xử lý
+
+            // Wait for data from the in-progress request
             return new Promise((resolve) => {
                 const checkData = setInterval(() => {
                     if (selectedProduct && selectedProduct.slug === slug) {
@@ -270,10 +286,12 @@ const useProduct = () => {
                         resolve(selectedProduct);
                     }
                 }, 100);
+
+                // Retry after timeout if necessary
                 setTimeout(() => {
                     clearInterval(checkData);
                     if (!selectedProduct || selectedProduct.slug !== slug) {
-                        resolve(getProductBySlug(slug)); // Gọi lại nếu không có dữ liệu sau 2s
+                        resolve(getProductBySlug(slug)); // Retry if no data after 2s
                     }
                 }, 2000);
             });
@@ -289,19 +307,25 @@ const useProduct = () => {
         try {
             console.log('Fetching product by slug:', slug);
             const product = await ProductService.getProductBySlug(slug);
+
+            // Ensure product has category and brand objects
             if (!product.category) {
                 product.category = { categoryId: 0, name: 'Uncategorized', slug: 'uncategorized', status: true, level: 0 };
             }
             if (!product.brand) {
                 product.brand = { brandId: 0, name: 'Unknown Brand', slug: 'unknown-brand', status: true };
             }
+
             dispatch(fetchProductDetailSuccess(product));
+
+            // Fetch additional product data in parallel
             const productId = product.productId;
             const [images, variants, related] = await Promise.all([
                 ProductService.getProductImages(productId),
                 ProductService.getActiveVariants(productId),
                 ProductService.getRelatedProducts({ productId, limit: 4 })
             ]);
+
             dispatch(fetchProductImagesSuccess(images));
             dispatch(fetchProductVariantsSuccess(variants));
             dispatch(fetchRelatedProductsSuccess(related));
@@ -347,37 +371,39 @@ const useProduct = () => {
         }
     };
 
-    // Cập nhật lại hàm này để làm việc với mảng danh mục thay vì một danh mục
+    // Updated to work with multiple categories as OR logic
     const getProductsByCategories = async (categoryIds: number[]): Promise<PageResponse<ProductResponseDTO>> => {
-        // Đảm bảo truyền vào một mảng hợp lệ, không phải undefined
         dispatch(setCategoryIds(categoryIds));
-        return getProducts({ categoryIds, page: 0, sortBy, sortDir });
+        return getProducts({ categoryIds, page: 0, size: DEFAULT_PAGE_SIZE, sortBy, sortDir });
     };
 
-    // Giữ lại hàm cũ cho tương thích ngược
+    // Maintained for backward compatibility
     const getProductsByCategory = async (categoryId: number): Promise<PageResponse<ProductResponseDTO>> => {
         dispatch(setSelectedCategory(categoryId));
-        return getProducts({ categoryId, page: 0, sortBy, sortDir });
+        return getProducts({ categoryId, page: 0, size: DEFAULT_PAGE_SIZE, sortBy, sortDir });
     };
 
-    // Cập nhật lại hàm này để làm việc với mảng thương hiệu thay vì một thương hiệu
+    // Updated to work with multiple brands as OR logic
     const getProductsByBrands = async (brandIds: number[]): Promise<PageResponse<ProductResponseDTO>> => {
-        // Đảm bảo truyền vào một mảng hợp lệ, không phải undefined
         dispatch(setBrandIds(brandIds));
-        return getProducts({ brandIds, page: 0, sortBy, sortDir });
+        return getProducts({ brandIds, page: 0, size: DEFAULT_PAGE_SIZE, sortBy, sortDir });
     };
 
-    // Giữ lại hàm cũ cho tương thích ngược
+    // Maintained for backward compatibility
     const getProductsByBrand = async (brandId: number): Promise<PageResponse<ProductResponseDTO>> => {
         dispatch(setSelectedBrand(brandId));
-        return getProducts({ brandId, page: 0, sortBy, sortDir });
+        return getProducts({ brandId, page: 0, size: DEFAULT_PAGE_SIZE, sortBy, sortDir });
     };
 
-    // Cập nhật lại hàm này để hỗ trợ nhiều danh mục và thương hiệu
+    // Updated to support multi-selection with appropriate logic
     const searchProducts = async (params: ProductSearchRequest): Promise<PageResponse<ProductResponseDTO>> => {
         dispatch(fetchProductsStart());
         try {
             console.log('Searching products with params:', params);
+            // Ensure consistent page size
+            if (!params.size) {
+                params.size = DEFAULT_PAGE_SIZE;
+            }
             const response = await ProductService.searchProducts(params);
             dispatch(fetchProductsSuccess(response));
             return response;
@@ -412,7 +438,7 @@ const useProduct = () => {
         }
     };
 
-    const getProductsOnSale = async (page: number = 0, size: number = 12): Promise<PageResponse<ProductResponseDTO>> => {
+    const getProductsOnSale = async (page: number = 0, size: number = DEFAULT_PAGE_SIZE): Promise<PageResponse<ProductResponseDTO>> => {
         try {
             const response = await ProductService.getProductsOnSale(page, size);
             dispatch(fetchOnSaleProductsSuccess(response));
@@ -447,23 +473,18 @@ const useProduct = () => {
         }
     };
 
-    // Thêm các hàm hỗ trợ thao tác với mảng danh mục
+    // Helper functions for multi-selection
     const addCategory = (categoryId: number) => dispatch(addCategoryId(categoryId));
     const removeCategory = (categoryId: number) => dispatch(removeCategoryId(categoryId));
-
-    // FIX: Sửa lỗi TypeScript TS2345 - xử lý undefined
     const setCategories = (categoryIds: number[] | null | undefined) =>
         dispatch(setCategoryIds(categoryIds || null));
 
-    // Thêm các hàm hỗ trợ thao tác với mảng thương hiệu
     const addBrand = (brandId: number) => dispatch(addBrandId(brandId));
     const removeBrand = (brandId: number) => dispatch(removeBrandId(brandId));
-
-    // FIX: Sửa lỗi TypeScript TS2345 - xử lý undefined
     const setBrands = (brandIds: number[] | null | undefined) =>
         dispatch(setBrandIds(brandIds || null));
 
-    // Giữ lại các hàm cũ cho tương thích ngược
+    // State update functions
     const updateSearchTerm = (term: string) => dispatch(setSearchTerm(term));
     const updateSelectedCategory = (categoryId: number | null) => dispatch(setSelectedCategory(categoryId));
     const updateSelectedBrand = (brandId: number | null) => dispatch(setSelectedBrand(brandId));
@@ -479,15 +500,16 @@ const useProduct = () => {
     const resetFilters = () => dispatch(clearFilters());
     const resetProductDetail = () => dispatch(clearProductDetail());
 
+    // Navigation helpers
     const loadNextPage = async (): Promise<PageResponse<ProductResponseDTO> | null> => {
         if (currentPage < totalPages - 1) {
             const nextPage = currentPage + 1;
             dispatch(setCurrentPage(nextPage));
 
-            // Cập nhật để sử dụng mảng thay vì giá trị đơn
+            // Use the multi-selection arrays for categories and brands
             return getProducts({
                 page: nextPage,
-                size: pageSize,
+                size: DEFAULT_PAGE_SIZE,
                 search: searchTerm,
                 categoryIds: selectedCategories.length > 0 ? selectedCategories : null,
                 brandIds: selectedBrands.length > 0 ? selectedBrands : null,
@@ -505,10 +527,10 @@ const useProduct = () => {
             const prevPage = currentPage - 1;
             dispatch(setCurrentPage(prevPage));
 
-            // Cập nhật để sử dụng mảng thay vì giá trị đơn
+            // Use the multi-selection arrays for categories and brands
             return getProducts({
                 page: prevPage,
-                size: pageSize,
+                size: DEFAULT_PAGE_SIZE,
                 search: searchTerm,
                 categoryIds: selectedCategories.length > 0 ? selectedCategories : null,
                 brandIds: selectedBrands.length > 0 ? selectedBrands : null,
@@ -521,50 +543,44 @@ const useProduct = () => {
         return null;
     };
 
-    // Cập nhật applyFilters để hỗ trợ nhiều danh mục và thương hiệu
-    const applyFilters = async (filters: {
-        searchTerm?: string;
-        categoryId?: number | null;
-        brandId?: number | null;
-        // Thêm tham số mới
-        categoryIds?: number[] | null;
-        brandIds?: number[] | null;
-        minPrice?: number | null;
-        maxPrice?: number | null;
-        page?: number;
-        sortBy?: string;
-        sortDir?: 'asc' | 'desc';
-    }): Promise<PageResponse<ProductResponseDTO>> => {
+    // Enhanced debounced filter application with better type safety
+    const applyFilters = async (filters: ProductFilterParams): Promise<PageResponse<ProductResponseDTO>> => {
         const stateUpdates: Array<() => void> = [];
 
-        if (filters.searchTerm !== undefined && filters.searchTerm !== searchTerm) {
-            stateUpdates.push(() => dispatch(setSearchTerm(filters.searchTerm!)));
+        // Handle search term
+        if (filters.search !== undefined && filters.search !== searchTerm) {
+            stateUpdates.push(() => dispatch(setSearchTerm(filters.search!)));
         }
 
-        // Ưu tiên xử lý categoryIds nếu có - FIX: Đảm bảo không truyền undefined
+        // Handle category selection - prioritize arrays over single values
         if (filters.categoryIds !== undefined) {
             stateUpdates.push(() => dispatch(setCategoryIds(filters.categoryIds || null)));
         } else if (filters.categoryId !== undefined && filters.categoryId !== selectedCategory) {
             stateUpdates.push(() => dispatch(setSelectedCategory(nullifyUndefined(filters.categoryId))));
         }
 
-        // Ưu tiên xử lý brandIds nếu có - FIX: Đảm bảo không truyền undefined
+        // Handle brand selection - prioritize arrays over single values
         if (filters.brandIds !== undefined) {
             stateUpdates.push(() => dispatch(setBrandIds(filters.brandIds || null)));
         } else if (filters.brandId !== undefined && filters.brandId !== selectedBrand) {
             stateUpdates.push(() => dispatch(setSelectedBrand(nullifyUndefined(filters.brandId))));
         }
 
+        // Handle price range
         if ((filters.minPrice !== undefined && filters.minPrice !== priceRange.min) ||
             (filters.maxPrice !== undefined && filters.maxPrice !== priceRange.max)) {
             const newMin = nullifyUndefined(filters.minPrice !== undefined ? filters.minPrice : priceRange.min);
             const newMax = nullifyUndefined(filters.maxPrice !== undefined ? filters.maxPrice : priceRange.max);
             stateUpdates.push(() => dispatch(setPriceRange({ min: newMin, max: newMax })));
         }
+
+        // Handle pagination
         const page = filters.page !== undefined ? filters.page : 0;
         if (page !== currentPage) {
             stateUpdates.push(() => dispatch(setCurrentPage(page)));
         }
+
+        // Handle sorting
         if (filters.sortBy !== undefined && filters.sortBy !== sortBy) {
             stateUpdates.push(() => dispatch(setSortBy(filters.sortBy || 'createdAt')));
         }
@@ -572,19 +588,20 @@ const useProduct = () => {
             stateUpdates.push(() => dispatch(setSortDir(filters.sortDir || 'desc')));
         }
 
+        // Apply all state updates
         stateUpdates.forEach(update => update());
 
-        // Xây dựng appliedFilters với hỗ trợ cho cả mảng và giá trị đơn
-        // FIX: Đảm bảo sử dụng null thay vì undefined
+        // Build final filter parameters - using AND logic between different attributes
+        // and OR logic within the same attribute
         const appliedFilters: ProductFilterParams = {
             page,
-            size: pageSize,
-            search: filters.searchTerm !== undefined ? filters.searchTerm : searchTerm,
+            size: filters.size || DEFAULT_PAGE_SIZE,
+            search: filters.search !== undefined ? filters.search : searchTerm,
             sortBy: filters.sortBy !== undefined ? filters.sortBy : sortBy,
             sortDir: filters.sortDir !== undefined ? filters.sortDir : sortDir
         };
 
-        // Xử lý category - ưu tiên mảng - FIX: Sử dụng null thay vì undefined
+        // Handle category selection with proper priority
         if (filters.categoryIds !== undefined) {
             appliedFilters.categoryIds = filters.categoryIds && filters.categoryIds.length > 0 ?
                 filters.categoryIds : null;
@@ -596,7 +613,7 @@ const useProduct = () => {
             appliedFilters.categoryId = selectedCategory;
         }
 
-        // Xử lý brand - ưu tiên mảng - FIX: Sử dụng null thay vì undefined
+        // Handle brand selection with proper priority
         if (filters.brandIds !== undefined) {
             appliedFilters.brandIds = filters.brandIds && filters.brandIds.length > 0 ?
                 filters.brandIds : null;
@@ -608,7 +625,7 @@ const useProduct = () => {
             appliedFilters.brandId = selectedBrand;
         }
 
-        // Xử lý price range - FIX: Sử dụng null thay vì undefined
+        // Handle price range
         if (filters.minPrice !== undefined) {
             appliedFilters.minPrice = filters.minPrice;
         } else if (priceRange.min !== null) {
@@ -621,7 +638,7 @@ const useProduct = () => {
             appliedFilters.maxPrice = priceRange.max;
         }
 
-        // Loại bỏ các thuộc tính null/undefined
+        // Remove undefined/null properties
         Object.keys(appliedFilters).forEach(key => {
             const k = key as keyof ProductFilterParams;
             if (appliedFilters[k] === undefined || appliedFilters[k] === null) {
@@ -633,7 +650,18 @@ const useProduct = () => {
         return getProducts(appliedFilters);
     };
 
+    // Set 15 product page size on hook initialization
+    useCallback(() => {
+        if (pageSize !== DEFAULT_PAGE_SIZE) {
+            dispatch(setPageSize(DEFAULT_PAGE_SIZE));
+        }
+    }, [dispatch, pageSize]);
+
     return {
+        // Constants
+        DEFAULT_PAGE_SIZE,
+
+        // Data selectors
         products,
         totalProducts,
         loading,
@@ -650,16 +678,17 @@ const useProduct = () => {
         totalPages,
         searchTerm,
 
-        // Thêm thuộc tính mới
+        // Multi-selection arrays
         selectedCategories,
         selectedBrands,
         selectedCategoryNames,
         selectedBrandNames,
 
-        // Giữ lại các thuộc tính cũ cho tương thích ngược
+        // Backward compatibility
         selectedCategory,
         selectedBrand,
 
+        // Other filter state
         priceRange,
         availableSizes,
         availableColors,
@@ -669,18 +698,20 @@ const useProduct = () => {
         sortBy,
         sortDir,
 
+        // Product fetching methods
         getProducts,
         getProductById,
         getProductBySlug,
 
-        // Thêm các phương thức mới
+        // Multi-selection methods
         getProductsByCategories,
         getProductsByBrands,
 
-        // Giữ lại các phương thức cũ
+        // Backward compatibility
         getProductsByCategory,
         getProductsByBrand,
 
+        // Other product fetching methods
         searchProducts,
         getFeaturedProducts,
         getLatestProducts,
@@ -688,7 +719,7 @@ const useProduct = () => {
         checkVariantAvailability,
         loadHomepageData,
 
-        // Thêm các phương thức mới
+        // Category/brand selection helpers
         addCategory,
         removeCategory,
         setCategories,
@@ -696,7 +727,7 @@ const useProduct = () => {
         removeBrand,
         setBrands,
 
-        // Giữ lại các phương thức cũ
+        // Filter state manipulation
         updateSearchTerm,
         updateSelectedCategory,
         updateSelectedBrand,

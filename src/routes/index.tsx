@@ -7,6 +7,9 @@ import productRoutes from "./product.routes.tsx";
 import React from "react";
 import orderRoutes from "./order.routes.tsx";
 import paymentRoutes from "./payment.routes.tsx";
+import newsRoutes from "./news.routes.tsx";
+import aboutRoutes from "./about.routes.tsx";
+import contactRoutes from "./contact.routes.tsx";
 
 interface AppRoutesProps {
     isDarkMode: boolean;
@@ -21,6 +24,9 @@ const AppRoutes = ({isDarkMode, setIsDarkMode}: AppRoutesProps) => {
         ...orderRoutes,
         ...paymentRoutes,
         ...checkoutRoutes,
+        ...newsRoutes,
+        ...aboutRoutes,
+        ...contactRoutes,
         ...authRoutes.map((route) => ({
             ...route,
             element: React.cloneElement(route.element as React.ReactElement, {

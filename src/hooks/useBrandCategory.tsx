@@ -1,5 +1,5 @@
 import { useDispatch, useSelector } from 'react-redux';
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import { AppDispatch } from '../redux/store';
 import BrandCategoryService from '../services/brand.category.service';
 import {
@@ -49,6 +49,29 @@ import {
 import { BrandFilterParams, BrandResponseDTO } from '../types/brand.types';
 import { CategoryFilterParams, CategoryHierarchyDTO, CategoryResponseDTO } from '../types/category.types';
 
+// Cache expiry constants
+const CACHE_EXPIRY_SHORT = 30000; // 30 seconds
+const CACHE_EXPIRY_LONG = 300000; // 5 minutes
+
+interface CacheEntry<T> {
+    data: T;
+    timestamp: number;
+}
+
+// Define types for the promises to avoid using 'any'
+type BrandPromise = Promise<BrandResponseDTO | BrandResponseDTO[]>;
+type CategoryPromise = Promise<CategoryResponseDTO | CategoryResponseDTO[] | CategoryHierarchyDTO>;
+type InitialDataPromise = Promise<{
+    categories: CategoryResponseDTO[];
+    brands: BrandResponseDTO[];
+}>;
+
+// Union type for all promise types
+type PendingRequestPromise = BrandPromise | CategoryPromise | InitialDataPromise;
+
+// Type for the pending requests map to allow for undefined values
+type PendingRequestsMap = { [key: string]: PendingRequestPromise | undefined };
+
 const useBrandCategory = () => {
     const dispatch = useDispatch<AppDispatch>();
 
@@ -83,26 +106,45 @@ const useBrandCategory = () => {
     const selectedBrandId = useSelector(selectSelectedBrandId);
     const showActiveOnly = useSelector(selectShowActiveOnly);
 
-    // Refs for tracking requests - sử dụng để tránh duplicate request
-    const lastBrandRequestRef = useRef({
+    // Refs for tracking and caching requests
+    const lastBrandRequestRef = useRef<{
+        timestamp: number;
+        inProgress: boolean;
+        params: BrandFilterParams;
+    }>({
         timestamp: 0,
         inProgress: false,
         params: {} as BrandFilterParams
     });
 
-    const lastCategoryRequestRef = useRef({
+    const lastCategoryRequestRef = useRef<{
+        timestamp: number;
+        inProgress: boolean;
+        params: CategoryFilterParams;
+    }>({
         timestamp: 0,
         inProgress: false,
         params: {} as CategoryFilterParams
     });
 
-    const lastSlugRequestRef = useRef({
+    const lastSlugRequestRef = useRef<{
+        slug: string;
+        timestamp: number;
+        inProgress: boolean;
+    }>({
         slug: '',
         timestamp: 0,
         inProgress: false
     });
 
-    // Hàm tạo thương hiệu mặc định
+    // Add refs for caching and request deduplication - fixed with proper type
+    const pendingRequestsRef = useRef<PendingRequestsMap>({});
+    const categoryDataCacheRef = useRef<Record<number, CacheEntry<CategoryHierarchyDTO>>>({});
+    const brandDataCacheRef = useRef<Record<number, CacheEntry<BrandResponseDTO>>>({});
+    const categoryBySlugCacheRef = useRef<Record<string, CacheEntry<CategoryResponseDTO>>>({});
+    const brandBySlugCacheRef = useRef<Record<string, CacheEntry<BrandResponseDTO>>>({});
+
+    // Helper function to create default objects - defined early to avoid circular references
     const createDefaultBrand = useCallback((brandId: number, slug: string = ''): BrandResponseDTO => {
         return {
             brandId: brandId,
@@ -114,7 +156,6 @@ const useBrandCategory = () => {
         };
     }, []);
 
-    // Hàm tạo danh mục mặc định
     const createDefaultCategory = useCallback((categoryId: number, slug: string = ''): CategoryResponseDTO => {
         return {
             categoryId: categoryId,
@@ -128,180 +169,226 @@ const useBrandCategory = () => {
     }, []);
 
     /**
-     * Get all active brands
+     * Get category breadcrumb - Defined early to avoid circular references
      */
-    const getActiveBrands = useCallback(async () => {
-        const currentTime = Date.now();
+    const getCategoryBreadcrumb = useCallback(async (categoryId: number): Promise<CategoryResponseDTO[]> => {
+        const requestKey = `breadcrumb_${categoryId}`;
 
-        // Kiểm tra cache để tránh gọi API không cần thiết
-        if (
-            activeBrands &&
-            activeBrands.length > 0 &&
-            currentTime - lastBrandRequestRef.current.timestamp < 30000 && // 30s cache
-            !lastBrandRequestRef.current.inProgress
-        ) {
-            console.log('Using cached active brands data');
-            return activeBrands;
+        // Check if there's a pending request
+        const pendingRequest = pendingRequestsRef.current[requestKey];
+        if (pendingRequest) {
+            console.log(`Reusing pending breadcrumb request for category ${categoryId}`);
+            return pendingRequest as Promise<CategoryResponseDTO[]>;
         }
 
-        lastBrandRequestRef.current = {
-            timestamp: currentTime,
-            inProgress: true,
-            params: { status: true }
-        };
+        // If we already have this breadcrumb cached in state
+        if (categoryBreadcrumb && categoryBreadcrumb.length > 0 &&
+            categoryBreadcrumb[categoryBreadcrumb.length - 1].categoryId === categoryId) {
+            return categoryBreadcrumb.map(category => ({ ...category }));
+        }
 
-        dispatch(fetchStart());
-        try {
-            console.log('Fetching active brands');
-            const response = await BrandCategoryService.getActiveBrands();
+        // Create and store the promise
+        const requestPromise = BrandCategoryService.getCategoryBreadcrumb(categoryId)
+            .then(response => {
+                // Validation
+                if (!Array.isArray(response)) {
+                    console.warn(`Invalid breadcrumb response for category ID ${categoryId}`);
+                    return [];
+                }
 
-            // Kiểm tra phản hồi trước khi sử dụng
-            if (!Array.isArray(response)) {
-                console.warn('Invalid active brands response, returning empty array');
-                lastBrandRequestRef.current.inProgress = false;
-                dispatch(fetchBrandsSuccess([]));
+                // Create deep copies
+                const copiedResponse = response.map(category => ({ ...category }));
+                dispatch(fetchCategoryBreadcrumbSuccess(copiedResponse));
+
+                // Clean up
+                delete pendingRequestsRef.current[requestKey];
+
+                return copiedResponse;
+            })
+            .catch(() => {
+                delete pendingRequestsRef.current[requestKey];
+
+                console.error(`Failed to fetch breadcrumb for category ${categoryId}`);
+                // Don't dispatch failure for breadcrumb issues as they're not critical
                 return [];
-            }
+            });
 
-            // Đảm bảo tạo bản sao của các đối tượng để tránh lỗi "object is not extensible"
-            const copiedResponse = response.map(brand => ({ ...brand }));
-            dispatch(fetchBrandsSuccess(copiedResponse));
-            lastBrandRequestRef.current.inProgress = false;
-            return copiedResponse;
-        } catch (error) {
-            lastBrandRequestRef.current.inProgress = false;
-            const errorMessage = error instanceof Error ? error.message : 'Failed to fetch brands';
-            console.error('Brand fetch error:', error);
-            dispatch(fetchFailure(errorMessage));
+        // Store the pending request
+        pendingRequestsRef.current[requestKey] = requestPromise;
 
-            // Trả về mảng rỗng thay vì throw error
-            return [];
-        }
-    }, [activeBrands, dispatch]);
+        return requestPromise;
+    }, [categoryBreadcrumb, dispatch]);
 
     /**
-     * Get all brands (including inactive)
+     * Get category with subcategories - Improved to prevent duplicate requests
      */
-    const getAllBrands = useCallback(async () => {
+    const getCategoryWithSubcategories = useCallback(async (categoryId: number): Promise<CategoryHierarchyDTO> => {
+        const requestKey = `category_hierarchy_${categoryId}`;
         const currentTime = Date.now();
 
-        // Kiểm tra cache để tránh gọi API không cần thiết
-        if (
-            brands &&
-            brands.length > 0 &&
-            currentTime - lastBrandRequestRef.current.timestamp < 30000 && // 30s cache
-            !lastBrandRequestRef.current.inProgress
-        ) {
-            console.log('Using cached all brands data');
-            return brands;
+        // Check if there's a pending request
+        const pendingRequest = pendingRequestsRef.current[requestKey];
+        if (pendingRequest) {
+            console.log(`Reusing pending request for category hierarchy ${categoryId}`);
+            return pendingRequest as Promise<CategoryHierarchyDTO>;
         }
 
-        lastBrandRequestRef.current = {
-            timestamp: currentTime,
-            inProgress: true,
-            params: {}
-        };
-
-        dispatch(fetchStart());
-        try {
-            console.log('Fetching all brands');
-            const response = await BrandCategoryService.getFilteredBrands({});
-
-            // Kiểm tra phản hồi trước khi sử dụng
-            if (!Array.isArray(response)) {
-                console.warn('Invalid brands response, returning empty array');
-                lastBrandRequestRef.current.inProgress = false;
-                dispatch(fetchBrandsSuccess([]));
-                return [];
-            }
-
-            // Đảm bảo tạo bản sao của các đối tượng để tránh lỗi "object is not extensible"
-            const copiedResponse = response.map(brand => ({ ...brand }));
-            dispatch(fetchBrandsSuccess(copiedResponse));
-            lastBrandRequestRef.current.inProgress = false;
-            return copiedResponse;
-        } catch (error) {
-            lastBrandRequestRef.current.inProgress = false;
-            const errorMessage = error instanceof Error ? error.message : 'Failed to fetch all brands';
-            console.error('Brand fetch error:', error);
-            dispatch(fetchFailure(errorMessage));
-
-            // Trả về mảng rỗng thay vì throw error
-            return [];
+        // Check cache
+        const cachedData = categoryDataCacheRef.current[categoryId];
+        if (cachedData && (currentTime - cachedData.timestamp < CACHE_EXPIRY_LONG)) {
+            console.log(`Using cached data for category hierarchy ${categoryId}`);
+            return {
+                category: cachedData.data.category ? { ...cachedData.data.category } : null,
+                subcategories: Array.isArray(cachedData.data.subcategories)
+                    ? cachedData.data.subcategories.map(sub => ({ ...sub }))
+                    : []
+            };
         }
-    }, [brands, dispatch]);
 
-    /**
-     * Get brand by ID
-     */
-    const getBrandById = useCallback(async (brandId: number) => {
-        // Nếu chúng ta đã có thương hiệu này, trả về từ cache
-        if (selectedBrand && selectedBrand.brandId === brandId) {
-            return { ...selectedBrand }; // Trả về bản sao để tránh lỗi "object is not extensible"
+        // If we already have this hierarchy in state and it matches the requested categoryId
+        if (categoryHierarchy && categoryHierarchy.category && categoryHierarchy.category.categoryId === categoryId) {
+            // Create deep copy
+            return {
+                category: categoryHierarchy.category ? { ...categoryHierarchy.category } : null,
+                subcategories: Array.isArray(categoryHierarchy.subcategories)
+                    ? categoryHierarchy.subcategories.map(sub => ({ ...sub }))
+                    : []
+            };
         }
 
         dispatch(fetchStart());
-        try {
-            const brand = await BrandCategoryService.getBrandById(brandId);
 
-            // Kiểm tra phản hồi
-            if (!brand || typeof brand !== 'object') {
-                console.warn(`Invalid brand response for ID ${brandId}`);
-                const defaultBrand = createDefaultBrand(brandId);
-                dispatch(fetchBrandDetailSuccess(defaultBrand));
-                return defaultBrand;
-            }
+        // Create and store the promise
+        const requestPromise = BrandCategoryService.getCategoryWithSubcategories(categoryId)
+            .then(response => {
+                // Validation
+                if (!response || typeof response !== 'object') {
+                    console.warn(`Invalid category hierarchy response for ID ${categoryId}`);
+                    const emptyHierarchy: CategoryHierarchyDTO = {
+                        category: null,
+                        subcategories: []
+                    };
+                    dispatch(fetchCategoryHierarchySuccess(emptyHierarchy));
+                    return emptyHierarchy;
+                }
 
-            const copiedBrand = { ...brand }; // Tạo bản sao
-            dispatch(fetchBrandDetailSuccess(copiedBrand));
-            return copiedBrand;
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : `Failed to fetch brand ${brandId}`;
-            console.error(`Brand ${brandId} fetch error:`, error);
-            dispatch(fetchFailure(errorMessage));
+                // Create deep copy
+                const copiedResponse: CategoryHierarchyDTO = {
+                    category: response.category ? { ...response.category } : null,
+                    subcategories: Array.isArray(response.subcategories)
+                        ? response.subcategories.map(sub => ({ ...sub }))
+                        : []
+                };
 
-            // Trả về thương hiệu mặc định thay vì throw error
-            const defaultBrand = createDefaultBrand(brandId);
-            dispatch(fetchBrandDetailSuccess(defaultBrand));
-            return defaultBrand;
-        }
-    }, [dispatch, selectedBrand, createDefaultBrand]);
+                // Cache the result
+                categoryDataCacheRef.current[categoryId] = {
+                    data: copiedResponse,
+                    timestamp: currentTime
+                };
+
+                dispatch(fetchCategoryHierarchySuccess(copiedResponse));
+
+                // Update selected category if available
+                if (copiedResponse.category) {
+                    dispatch(fetchCategoryDetailSuccess({ ...copiedResponse.category }));
+                }
+
+                // Clean up
+                delete pendingRequestsRef.current[requestKey];
+
+                return copiedResponse;
+            })
+            .catch(err => {
+                delete pendingRequestsRef.current[requestKey];
+
+                console.error(`Category hierarchy ${categoryId} fetch error:`, err);
+
+                // Return empty structure for errors
+                const emptyResponse: CategoryHierarchyDTO = {
+                    category: null,
+                    subcategories: []
+                };
+
+                // Only dispatch failure for serious errors
+                if (!(err instanceof Error && err.message.includes('not found'))) {
+                    const errorMessage = err instanceof Error ? err.message : `Failed to fetch category hierarchy for ${categoryId}`;
+                    dispatch(fetchFailure(errorMessage));
+                }
+
+                dispatch(fetchCategoryHierarchySuccess(emptyResponse));
+                return emptyResponse;
+            });
+
+        // Store the pending request
+        pendingRequestsRef.current[requestKey] = requestPromise;
+
+        return requestPromise;
+    }, [categoryHierarchy, dispatch]);
 
     /**
-     * Get brand by slug
+     * Get category by slug
      */
-    const getBrandBySlug = useCallback(async (slug: string) => {
+    const getCategoryBySlug = useCallback(async (slug: string): Promise<CategoryResponseDTO> => {
         const currentTime = Date.now();
+        const requestKey = `category_slug_${slug}`;
         const isSameRequest = slug === lastSlugRequestRef.current.slug;
-        const isRecentRequest = currentTime - lastSlugRequestRef.current.timestamp < 30000; // 30s cache
+        const isRecentRequest = currentTime - lastSlugRequestRef.current.timestamp < CACHE_EXPIRY_SHORT;
         const isRequestInProgress = lastSlugRequestRef.current.inProgress;
 
-        // Nếu thương hiệu đã được chọn có slug này, trả về nó
-        if (selectedBrand && selectedBrand.slug === slug) {
-            return { ...selectedBrand }; // Trả về bản sao để tránh lỗi "object is not extensible"
+        // Check if there's a pending request
+        const pendingRequest = pendingRequestsRef.current[requestKey];
+        if (pendingRequest) {
+            console.log(`Reusing pending request for category slug ${slug}`);
+            return pendingRequest as Promise<CategoryResponseDTO>;
         }
 
-        // Bỏ qua các request trùng lặp đang xử lý hoặc gần đây
-        if ((isSameRequest && isRecentRequest) || (isSameRequest && isRequestInProgress)) {
-            console.log('Skipping duplicate brand request for slug:', slug);
+        // Check cache
+        const cachedData = categoryBySlugCacheRef.current[slug];
+        if (cachedData && (currentTime - cachedData.timestamp < CACHE_EXPIRY_LONG)) {
+            console.log(`Using cached data for category slug ${slug}`);
 
-            // Trả về promise chờ request hiện tại hoàn thành
-            return new Promise((resolve) => {
-                const checkData = setInterval(() => {
-                    if (selectedBrand && selectedBrand.slug === slug) {
-                        clearInterval(checkData);
-                        resolve({ ...selectedBrand }); // Trả về bản sao
+            // If we have a cached category with parent info, also fetch subcategories
+            const category = cachedData.data;
+            if (category.level === 0 || !category.parentId) {
+                // This is non-blocking - just trigger the fetch in the background
+                void getCategoryWithSubcategories(category.categoryId).catch(() => {
+                    console.warn(`Background fetch of subcategories failed for ${category.categoryId}`);
+                });
+            }
+
+            return { ...cachedData.data };
+        }
+
+        // If we already have this category in state
+        if (selectedCategory && selectedCategory.slug === slug) {
+            return { ...selectedCategory };
+        }
+
+        // Skip duplicate requests
+        if ((isSameRequest && isRecentRequest) || (isSameRequest && isRequestInProgress)) {
+            console.log('Skipping duplicate category request for slug:', slug);
+
+            // Wait for existing data using an async approach instead of checking promise existence
+            const checkDataPromise = new Promise<CategoryResponseDTO>((resolve) => {
+                const checkInterval = setInterval(() => {
+                    if (selectedCategory && selectedCategory.slug === slug) {
+                        clearInterval(checkInterval);
+                        resolve({ ...selectedCategory });
+                    } else if (categoryBySlugCacheRef.current[slug]) {
+                        clearInterval(checkInterval);
+                        resolve({ ...categoryBySlugCacheRef.current[slug].data });
                     }
                 }, 100);
 
-                // Sau 2s, thử lại nếu vẫn chưa có dữ liệu
+                // After 2s, retry if still nothing
                 setTimeout(() => {
-                    clearInterval(checkData);
-                    if (!selectedBrand || selectedBrand.slug !== slug) {
-                        resolve(getBrandBySlug(slug));
-                    }
+                    clearInterval(checkInterval);
+                    // Only retry if we don't have the data yet
+                    resolve(getCategoryBySlug(slug));
                 }, 2000);
             });
+
+            return checkDataPromise;
         }
 
         lastSlugRequestRef.current = {
@@ -311,95 +398,515 @@ const useBrandCategory = () => {
         };
 
         dispatch(fetchStart());
-        try {
-            // Tìm kiếm thương hiệu theo tên/slug
-            const searchResult = await BrandCategoryService.searchBrands(slug);
 
-            // Kiểm tra phản hồi
-            if (!Array.isArray(searchResult)) {
-                console.warn(`Invalid search results for brand slug ${slug}`);
+        // Create and store the promise
+        const requestPromise = BrandCategoryService.getCategoryBySlug(slug)
+            .then(async (category) => {
+                // Validation
+                if (!category || typeof category !== 'object') {
+                    console.warn(`Invalid category response for slug ${slug}`);
+                    lastSlugRequestRef.current.inProgress = false;
+
+                    const defaultCategory = createDefaultCategory(0, slug);
+                    dispatch(fetchCategoryDetailSuccess(defaultCategory));
+
+                    // Cache the default result
+                    categoryBySlugCacheRef.current[slug] = {
+                        data: defaultCategory,
+                        timestamp: currentTime
+                    };
+
+                    return defaultCategory;
+                }
+
+                // Create deep copy
+                const copiedCategory = { ...category };
+                dispatch(fetchCategoryDetailSuccess(copiedCategory));
+
+                // Cache the result
+                categoryBySlugCacheRef.current[slug] = {
+                    data: copiedCategory,
+                    timestamp: currentTime
+                };
+
+                // If parent category, fetch subcategories in the background
+                if (copiedCategory.level === 0 || !copiedCategory.parentId) {
+                    try {
+                        await getCategoryWithSubcategories(copiedCategory.categoryId);
+                    } catch {
+                        console.warn(`Failed to fetch subcategories for ${copiedCategory.categoryId}`);
+                    }
+                }
+
+                // Get breadcrumb in the background
+                try {
+                    await getCategoryBreadcrumb(copiedCategory.categoryId);
+                } catch {
+                    console.warn(`Failed to fetch breadcrumb for ${copiedCategory.categoryId}`);
+                }
+
+                lastSlugRequestRef.current.inProgress = false;
+                return copiedCategory;
+            })
+            .catch(err => {
+                lastSlugRequestRef.current.inProgress = false;
+
+                const errorMessage = err instanceof Error ? err.message : `Failed to fetch category by slug ${slug}`;
+                console.error(`Category slug ${slug} fetch error:`, err);
+                dispatch(fetchFailure(errorMessage));
+
+                const defaultCategory = createDefaultCategory(0, slug);
+                dispatch(fetchCategoryDetailSuccess(defaultCategory));
+
+                // Cache the default result for errors too
+                categoryBySlugCacheRef.current[slug] = {
+                    data: defaultCategory,
+                    timestamp: currentTime
+                };
+
+                return defaultCategory;
+            })
+            .finally(() => {
+                delete pendingRequestsRef.current[requestKey];
+            });
+
+        // Store the pending request
+        pendingRequestsRef.current[requestKey] = requestPromise;
+
+        return requestPromise;
+    }, [dispatch, selectedCategory, createDefaultCategory, getCategoryWithSubcategories, getCategoryBreadcrumb]);
+
+    /**
+     * Get all active brands
+     */
+    const getActiveBrands = useCallback(async (): Promise<BrandResponseDTO[]> => {
+        const currentTime = Date.now();
+        const requestKey = 'active_brands';
+
+        // Check if there's a pending request
+        const pendingRequest = pendingRequestsRef.current[requestKey];
+        if (pendingRequest) {
+            console.log('Reusing pending active brands request');
+            return pendingRequest as Promise<BrandResponseDTO[]>;
+        }
+
+        // Check cache to avoid unnecessary API calls
+        if (
+            activeBrands &&
+            activeBrands.length > 0 &&
+            currentTime - lastBrandRequestRef.current.timestamp < CACHE_EXPIRY_SHORT &&
+            !lastBrandRequestRef.current.inProgress
+        ) {
+            console.log('Using cached active brands data');
+            return activeBrands.map(brand => ({ ...brand }));
+        }
+
+        lastBrandRequestRef.current = {
+            timestamp: currentTime,
+            inProgress: true,
+            params: { status: true }
+        };
+
+        dispatch(fetchStart());
+
+        // Create and store the promise
+        const requestPromise = BrandCategoryService.getActiveBrands()
+            .then(response => {
+                // Validation and safeguards
+                if (!Array.isArray(response)) {
+                    console.warn('Invalid active brands response, returning empty array');
+                    dispatch(fetchBrandsSuccess([]));
+                    return [];
+                }
+
+                // Create deep copies to avoid "object is not extensible" errors
+                const copiedResponse = response.map(brand => ({ ...brand }));
+                dispatch(fetchBrandsSuccess(copiedResponse));
+
+                // Clean up
+                delete pendingRequestsRef.current[requestKey];
+                lastBrandRequestRef.current.inProgress = false;
+
+                return copiedResponse;
+            })
+            .catch(err => {
+                lastBrandRequestRef.current.inProgress = false;
+                delete pendingRequestsRef.current[requestKey];
+
+                const errorMessage = err instanceof Error ? err.message : 'Failed to fetch brands';
+                console.error('Brand fetch error:', err);
+                dispatch(fetchFailure(errorMessage));
+
+                return [];
+            });
+
+        // Store the pending request
+        pendingRequestsRef.current[requestKey] = requestPromise;
+
+        return requestPromise;
+    }, [activeBrands, dispatch]);
+
+    /**
+     * Get all brands (including inactive)
+     */
+    const getAllBrands = useCallback(async (): Promise<BrandResponseDTO[]> => {
+        const currentTime = Date.now();
+        const requestKey = 'all_brands';
+
+        // Check if there's a pending request
+        const pendingRequest = pendingRequestsRef.current[requestKey];
+        if (pendingRequest) {
+            console.log('Reusing pending all brands request');
+            return pendingRequest as Promise<BrandResponseDTO[]>;
+        }
+
+        // Check cache to avoid unnecessary API calls
+        if (
+            brands &&
+            brands.length > 0 &&
+            currentTime - lastBrandRequestRef.current.timestamp < CACHE_EXPIRY_SHORT &&
+            !lastBrandRequestRef.current.inProgress
+        ) {
+            console.log('Using cached all brands data');
+            return brands.map(brand => ({ ...brand }));
+        }
+
+        lastBrandRequestRef.current = {
+            timestamp: currentTime,
+            inProgress: true,
+            params: {}
+        };
+
+        dispatch(fetchStart());
+
+        // Create and store the promise
+        const requestPromise = BrandCategoryService.getFilteredBrands({})
+            .then(response => {
+                // Validation and safeguards
+                if (!Array.isArray(response)) {
+                    console.warn('Invalid brands response, returning empty array');
+                    dispatch(fetchBrandsSuccess([]));
+                    return [];
+                }
+
+                // Create deep copies to avoid "object is not extensible" errors
+                const copiedResponse = response.map(brand => ({ ...brand }));
+                dispatch(fetchBrandsSuccess(copiedResponse));
+
+                // Clean up
+                delete pendingRequestsRef.current[requestKey];
+                lastBrandRequestRef.current.inProgress = false;
+
+                return copiedResponse;
+            })
+            .catch(err => {
+                lastBrandRequestRef.current.inProgress = false;
+                delete pendingRequestsRef.current[requestKey];
+
+                const errorMessage = err instanceof Error ? err.message : 'Failed to fetch all brands';
+                console.error('Brand fetch error:', err);
+                dispatch(fetchFailure(errorMessage));
+
+                return [];
+            });
+
+        // Store the pending request
+        pendingRequestsRef.current[requestKey] = requestPromise;
+
+        return requestPromise;
+    }, [brands, dispatch]);
+
+    /**
+     * Get brand by ID
+     */
+    const getBrandById = useCallback(async (brandId: number): Promise<BrandResponseDTO> => {
+        const requestKey = `brand_${brandId}`;
+        const currentTime = Date.now();
+
+        // Check if there's a pending request
+        const pendingRequest = pendingRequestsRef.current[requestKey];
+        if (pendingRequest) {
+            console.log(`Reusing pending request for brand ${brandId}`);
+            return pendingRequest as Promise<BrandResponseDTO>;
+        }
+
+        // Check cache
+        const cachedData = brandDataCacheRef.current[brandId];
+        if (cachedData && (currentTime - cachedData.timestamp < CACHE_EXPIRY_LONG)) {
+            console.log(`Using cached data for brand ${brandId}`);
+            return { ...cachedData.data };
+        }
+
+        // If we already have this brand in the selected state
+        if (selectedBrand && selectedBrand.brandId === brandId) {
+            return { ...selectedBrand };
+        }
+
+        dispatch(fetchStart());
+
+        // Create and store the promise
+        const requestPromise = BrandCategoryService.getBrandById(brandId)
+            .then(brand => {
+                // Validation
+                if (!brand || typeof brand !== 'object') {
+                    console.warn(`Invalid brand response for ID ${brandId}`);
+                    const defaultBrand = createDefaultBrand(brandId);
+                    dispatch(fetchBrandDetailSuccess(defaultBrand));
+                    return defaultBrand;
+                }
+
+                const copiedBrand = { ...brand };
+
+                // Cache the result
+                brandDataCacheRef.current[brandId] = {
+                    data: copiedBrand,
+                    timestamp: currentTime
+                };
+
+                dispatch(fetchBrandDetailSuccess(copiedBrand));
+
+                // Clean up
+                delete pendingRequestsRef.current[requestKey];
+
+                return copiedBrand;
+            })
+            .catch(err => {
+                delete pendingRequestsRef.current[requestKey];
+
+                const errorMessage = err instanceof Error ? err.message : `Failed to fetch brand ${brandId}`;
+                console.error(`Brand ${brandId} fetch error:`, err);
+                dispatch(fetchFailure(errorMessage));
+
+                const defaultBrand = createDefaultBrand(brandId);
+                dispatch(fetchBrandDetailSuccess(defaultBrand));
+                return defaultBrand;
+            });
+
+        // Store the pending request
+        pendingRequestsRef.current[requestKey] = requestPromise;
+
+        return requestPromise;
+    }, [dispatch, selectedBrand, createDefaultBrand]);
+
+    /**
+     * Get brand by slug
+     */
+    const getBrandBySlug = useCallback(async (slug: string): Promise<BrandResponseDTO> => {
+        const currentTime = Date.now();
+        const requestKey = `brand_slug_${slug}`;
+        const isSameRequest = slug === lastSlugRequestRef.current.slug;
+        const isRecentRequest = currentTime - lastSlugRequestRef.current.timestamp < CACHE_EXPIRY_SHORT;
+        const isRequestInProgress = lastSlugRequestRef.current.inProgress;
+
+        // Check if there's a pending request
+        const pendingRequest = pendingRequestsRef.current[requestKey];
+        if (pendingRequest) {
+            console.log(`Reusing pending request for brand slug ${slug}`);
+            return pendingRequest as Promise<BrandResponseDTO>;
+        }
+
+        // Check cache
+        const cachedData = brandBySlugCacheRef.current[slug];
+        if (cachedData && (currentTime - cachedData.timestamp < CACHE_EXPIRY_LONG)) {
+            console.log(`Using cached data for brand slug ${slug}`);
+            return { ...cachedData.data };
+        }
+
+        // If we already have this brand in state
+        if (selectedBrand && selectedBrand.slug === slug) {
+            return { ...selectedBrand };
+        }
+
+        // Skip duplicate requests
+        if ((isSameRequest && isRecentRequest) || (isSameRequest && isRequestInProgress)) {
+            console.log('Skipping duplicate brand request for slug:', slug);
+
+            // Wait for existing data using an async approach instead of checking promise existence
+            const checkDataPromise = new Promise<BrandResponseDTO>((resolve) => {
+                const checkInterval = setInterval(() => {
+                    if (selectedBrand && selectedBrand.slug === slug) {
+                        clearInterval(checkInterval);
+                        resolve({ ...selectedBrand });
+                    } else if (brandBySlugCacheRef.current[slug]) {
+                        clearInterval(checkInterval);
+                        resolve({ ...brandBySlugCacheRef.current[slug].data });
+                    }
+                }, 100);
+
+                // After 2s, retry if still nothing
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    // Only retry if we don't have the data yet
+                    resolve(getBrandBySlug(slug));
+                }, 2000);
+            });
+
+            return checkDataPromise;
+        }
+
+        lastSlugRequestRef.current = {
+            slug,
+            timestamp: currentTime,
+            inProgress: true
+        };
+
+        dispatch(fetchStart());
+
+        // Create and store the promise
+        const requestPromise = BrandCategoryService.searchBrands(slug)
+            .then(searchResult => {
+                // Validation
+                if (!Array.isArray(searchResult)) {
+                    console.warn(`Invalid search results for brand slug ${slug}`);
+                    lastSlugRequestRef.current.inProgress = false;
+
+                    const defaultBrand = createDefaultBrand(0, slug);
+                    dispatch(fetchBrandDetailSuccess(defaultBrand));
+
+                    // Cache the default result
+                    brandBySlugCacheRef.current[slug] = {
+                        data: defaultBrand,
+                        timestamp: currentTime
+                    };
+
+                    return defaultBrand;
+                }
+
+                // Find exact match by slug
+                const exactMatch = searchResult.find(b => b.slug === slug);
+
+                if (exactMatch) {
+                    const copiedBrand = { ...exactMatch };
+                    dispatch(fetchBrandDetailSuccess(copiedBrand));
+
+                    // Cache the result
+                    brandBySlugCacheRef.current[slug] = {
+                        data: copiedBrand,
+                        timestamp: currentTime
+                    };
+
+                    lastSlugRequestRef.current.inProgress = false;
+                    return copiedBrand;
+                }
+
+                // Default brand if not found
                 lastSlugRequestRef.current.inProgress = false;
                 const defaultBrand = createDefaultBrand(0, slug);
                 dispatch(fetchBrandDetailSuccess(defaultBrand));
+
+                // Cache the default result
+                brandBySlugCacheRef.current[slug] = {
+                    data: defaultBrand,
+                    timestamp: currentTime
+                };
+
                 return defaultBrand;
-            }
-
-            // Tìm kết quả chính xác theo slug
-            const exactMatch = searchResult.find(b => b.slug === slug);
-
-            if (exactMatch) {
-                const copiedBrand = { ...exactMatch }; // Tạo bản sao
-                dispatch(fetchBrandDetailSuccess(copiedBrand));
+            })
+            .catch(err => {
                 lastSlugRequestRef.current.inProgress = false;
-                return copiedBrand;
-            }
 
-            // Nếu không tìm thấy kết quả chính xác, trả về thương hiệu mặc định
-            lastSlugRequestRef.current.inProgress = false;
-            const defaultBrand = createDefaultBrand(0, slug);
-            dispatch(fetchBrandDetailSuccess(defaultBrand));
-            return defaultBrand;
-        } catch (error) {
-            lastSlugRequestRef.current.inProgress = false;
-            const errorMessage = error instanceof Error ? error.message : `Failed to fetch brand by slug ${slug}`;
-            console.error(`Brand slug ${slug} fetch error:`, error);
-            dispatch(fetchFailure(errorMessage));
+                const errorMessage = err instanceof Error ? err.message : `Failed to fetch brand by slug ${slug}`;
+                console.error(`Brand slug ${slug} fetch error:`, err);
+                dispatch(fetchFailure(errorMessage));
 
-            // Trả về thương hiệu mặc định thay vì throw error
-            const defaultBrand = createDefaultBrand(0, slug);
-            dispatch(fetchBrandDetailSuccess(defaultBrand));
-            return defaultBrand;
-        }
+                const defaultBrand = createDefaultBrand(0, slug);
+                dispatch(fetchBrandDetailSuccess(defaultBrand));
+
+                // Cache the default result for errors too
+                brandBySlugCacheRef.current[slug] = {
+                    data: defaultBrand,
+                    timestamp: currentTime
+                };
+
+                return defaultBrand;
+            })
+            .finally(() => {
+                delete pendingRequestsRef.current[requestKey];
+            });
+
+        // Store the pending request
+        pendingRequestsRef.current[requestKey] = requestPromise;
+
+        return requestPromise;
     }, [dispatch, selectedBrand, createDefaultBrand]);
 
     /**
      * Search brands
      */
-    const searchBrands = useCallback(async (keyword: string) => {
+    const searchBrands = useCallback(async (keyword: string): Promise<BrandResponseDTO[]> => {
         if (!keyword || keyword.trim() === '') {
             return activeBrands && activeBrands.length > 0
-                ? activeBrands.map(brand => ({ ...brand })) // Trả về bản sao
+                ? activeBrands.map(brand => ({ ...brand }))
                 : await getActiveBrands();
+        }
+
+        const requestKey = `search_brands_${keyword}`;
+
+        // Check if there's a pending request
+        const pendingRequest = pendingRequestsRef.current[requestKey];
+        if (pendingRequest) {
+            console.log(`Reusing pending search request for "${keyword}"`);
+            return pendingRequest as Promise<BrandResponseDTO[]>;
         }
 
         dispatch(setBrandSearchTerm(keyword));
         dispatch(fetchStart());
-        try {
-            const response = await BrandCategoryService.searchBrands(keyword);
 
-            // Kiểm tra phản hồi
-            if (!Array.isArray(response)) {
-                console.warn(`Invalid search results for brand keyword ${keyword}`);
+        // Create and store the promise
+        const requestPromise = BrandCategoryService.searchBrands(keyword)
+            .then(response => {
+                // Validation
+                if (!Array.isArray(response)) {
+                    console.warn(`Invalid search results for brand keyword ${keyword}`);
+                    return [];
+                }
+
+                // Return deep copies
+                const results = response.map(brand => ({ ...brand }));
+
+                // Clean up
+                delete pendingRequestsRef.current[requestKey];
+
+                return results;
+            })
+            .catch(err => {
+                delete pendingRequestsRef.current[requestKey];
+
+                const errorMessage = err instanceof Error ? err.message : 'Failed to search brands';
+                console.error('Brand search error:', err);
+                dispatch(fetchFailure(errorMessage));
+
                 return [];
-            }
+            });
 
-            // Trả về bản sao của các đối tượng
-            return response.map(brand => ({ ...brand }));
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Failed to search brands';
-            console.error('Brand search error:', error);
-            dispatch(fetchFailure(errorMessage));
+        // Store the pending request
+        pendingRequestsRef.current[requestKey] = requestPromise;
 
-            // Trả về mảng rỗng thay vì throw error
-            return [];
-        }
+        return requestPromise;
     }, [activeBrands, getActiveBrands, dispatch]);
 
     /**
      * Get all active parent categories
      */
-    const getActiveParentCategories = useCallback(async () => {
+    const getActiveParentCategories = useCallback(async (): Promise<CategoryResponseDTO[]> => {
         const currentTime = Date.now();
+        const requestKey = 'active_parent_categories';
 
-        // Kiểm tra cache để tránh gọi API không cần thiết
+        // Check if there's a pending request
+        const pendingRequest = pendingRequestsRef.current[requestKey];
+        if (pendingRequest) {
+            console.log('Reusing pending parent categories request');
+            return pendingRequest as Promise<CategoryResponseDTO[]>;
+        }
+
+        // Check cache to avoid unnecessary API calls
         if (
             activeParentCategories &&
             activeParentCategories.length > 0 &&
-            currentTime - lastCategoryRequestRef.current.timestamp < 30000 && // 30s cache
+            currentTime - lastCategoryRequestRef.current.timestamp < CACHE_EXPIRY_SHORT &&
             !lastCategoryRequestRef.current.inProgress
         ) {
             console.log('Using cached active parent categories data');
-            // Trả về bản sao của các đối tượng
             return activeParentCategories.map(category => ({ ...category }));
         }
 
@@ -410,328 +917,188 @@ const useBrandCategory = () => {
         };
 
         dispatch(fetchStart());
-        try {
-            console.log('Fetching active parent categories');
-            const response = await BrandCategoryService.getAllActiveParentCategories();
 
-            // Kiểm tra phản hồi
-            if (!Array.isArray(response)) {
-                console.warn('Invalid parent categories response');
+        // Create and store the promise
+        const requestPromise = BrandCategoryService.getAllActiveParentCategories()
+            .then(response => {
+                // Validation
+                if (!Array.isArray(response)) {
+                    console.warn('Invalid parent categories response');
+                    lastCategoryRequestRef.current.inProgress = false;
+                    dispatch(fetchParentCategoriesSuccess([]));
+                    return [];
+                }
+
+                // Create deep copies
+                const copiedResponse = response.map(category => ({ ...category }));
+                dispatch(fetchParentCategoriesSuccess(copiedResponse));
+
+                // Clean up
                 lastCategoryRequestRef.current.inProgress = false;
-                dispatch(fetchParentCategoriesSuccess([]));
-                return [];
-            }
+                delete pendingRequestsRef.current[requestKey];
 
-            // Tạo bản sao của các đối tượng
-            const copiedResponse = response.map(category => ({ ...category }));
-            dispatch(fetchParentCategoriesSuccess(copiedResponse));
-            lastCategoryRequestRef.current.inProgress = false;
-            return copiedResponse;
-        } catch (error) {
-            lastCategoryRequestRef.current.inProgress = false;
-            const errorMessage = error instanceof Error ? error.message : 'Failed to fetch parent categories';
-            console.error('Category fetch error:', error);
-            dispatch(fetchFailure(errorMessage));
+                return copiedResponse;
+            })
+            .catch(err => {
+                lastCategoryRequestRef.current.inProgress = false;
+                delete pendingRequestsRef.current[requestKey];
 
-            // Trả về mảng rỗng thay vì throw error
-            return [];
-        }
-    }, [activeParentCategories, dispatch]);
-
-    /**
-     * Get category with subcategories
-     * Cập nhật để xử lý định dạng API mới
-     */
-    const getCategoryWithSubcategories = useCallback(async (categoryId: number): Promise<CategoryHierarchyDTO> => {
-        // Nếu đã có dữ liệu và categoryId khớp, trả về từ cache
-        if (categoryHierarchy && categoryHierarchy.category && categoryHierarchy.category.categoryId === categoryId) {
-            // Tạo bản sao sâu để tránh lỗi "object is not extensible"
-            return {
-                category: categoryHierarchy.category ? { ...categoryHierarchy.category } : null,
-                subcategories: Array.isArray(categoryHierarchy.subcategories) ?
-                    categoryHierarchy.subcategories.map(sub => ({ ...sub })) : []
-            };
-        }
-
-        dispatch(fetchStart());
-        try {
-            console.log(`Fetching category with subcategories for ID: ${categoryId}`);
-            const response = await BrandCategoryService.getCategoryWithSubcategories(categoryId);
-
-            // Kiểm tra phản hồi
-            if (!response || typeof response !== 'object') {
-                console.warn(`Invalid category hierarchy response for ID ${categoryId}`);
-                const emptyHierarchy: CategoryHierarchyDTO = {
-                    category: null,
-                    subcategories: []
-                };
-                dispatch(fetchCategoryHierarchySuccess(emptyHierarchy));
-                return emptyHierarchy;
-            }
-
-            // Đảm bảo response đã là bản sao sâu
-            const copiedResponse: CategoryHierarchyDTO = {
-                category: response.category ? { ...response.category } : null,
-                subcategories: Array.isArray(response.subcategories) ?
-                    response.subcategories.map(sub => ({ ...sub })) : []
-            };
-
-            dispatch(fetchCategoryHierarchySuccess(copiedResponse));
-
-            // Cập nhật danh mục đã chọn nếu có
-            if (copiedResponse.category) {
-                dispatch(fetchCategoryDetailSuccess({ ...copiedResponse.category }));
-            }
-
-            return copiedResponse;
-        } catch (error) {
-            console.error(`Category hierarchy ${categoryId} fetch error:`, error);
-
-            // Trả về cấu trúc rỗng khi có lỗi thay vì throw
-            const emptyResponse: CategoryHierarchyDTO = {
-                category: null,
-                subcategories: []
-            };
-
-            // Chỉ dispatch failure nếu là lỗi thực sự, không phải trường hợp không tìm thấy
-            if (!(error instanceof Error && error.message.includes('not found'))) {
-                const errorMessage = error instanceof Error ? error.message : `Failed to fetch category hierarchy for ${categoryId}`;
+                const errorMessage = err instanceof Error ? err.message : 'Failed to fetch parent categories';
+                console.error('Category fetch error:', err);
                 dispatch(fetchFailure(errorMessage));
-            }
 
-            dispatch(fetchCategoryHierarchySuccess(emptyResponse));
-            return emptyResponse;
-        }
-    }, [categoryHierarchy, dispatch]);
-
-    /**
-     * Get category by slug
-     */
-    const getCategoryBySlug = useCallback(async (slug: string) => {
-        const currentTime = Date.now();
-        const isSameRequest = slug === lastSlugRequestRef.current.slug;
-        const isRecentRequest = currentTime - lastSlugRequestRef.current.timestamp < 30000; // 30s cache
-        const isRequestInProgress = lastSlugRequestRef.current.inProgress;
-
-        // Nếu danh mục đã được chọn có slug này, trả về nó
-        if (selectedCategory && selectedCategory.slug === slug) {
-            return { ...selectedCategory }; // Trả về bản sao
-        }
-
-        // Bỏ qua các request trùng lặp đang xử lý hoặc gần đây
-        if ((isSameRequest && isRecentRequest) || (isSameRequest && isRequestInProgress)) {
-            console.log('Skipping duplicate category request for slug:', slug);
-
-            // Trả về promise chờ request hiện tại hoàn thành
-            return new Promise((resolve) => {
-                const checkData = setInterval(() => {
-                    if (selectedCategory && selectedCategory.slug === slug) {
-                        clearInterval(checkData);
-                        resolve({ ...selectedCategory }); // Trả về bản sao
-                    }
-                }, 100);
-
-                // Sau 2s, thử lại nếu vẫn chưa có dữ liệu
-                setTimeout(() => {
-                    clearInterval(checkData);
-                    if (!selectedCategory || selectedCategory.slug !== slug) {
-                        resolve(getCategoryBySlug(slug));
-                    }
-                }, 2000);
-            });
-        }
-
-        lastSlugRequestRef.current = {
-            slug,
-            timestamp: currentTime,
-            inProgress: true
-        };
-
-        dispatch(fetchStart());
-        try {
-            const category = await BrandCategoryService.getCategoryBySlug(slug);
-
-            // Kiểm tra phản hồi
-            if (!category || typeof category !== 'object') {
-                console.warn(`Invalid category response for slug ${slug}`);
-                lastSlugRequestRef.current.inProgress = false;
-                const defaultCategory = createDefaultCategory(0, slug);
-                dispatch(fetchCategoryDetailSuccess(defaultCategory));
-                return defaultCategory;
-            }
-
-            // Tạo bản sao
-            const copiedCategory = { ...category };
-            dispatch(fetchCategoryDetailSuccess(copiedCategory));
-
-            // Nếu là danh mục cha, lấy thêm danh mục con
-            if (copiedCategory.level === 0) {
-                await getCategoryWithSubcategories(copiedCategory.categoryId).catch(() => {
-                    // Xử lý lỗi ở đây nếu không lấy được danh mục con
-                    console.warn(`Failed to fetch subcategories for ${copiedCategory.categoryId}`);
-                });
-            }
-
-            // Lấy breadcrumb
-            await getCategoryBreadcrumb(copiedCategory.categoryId).catch(() => {
-                // Xử lý lỗi ở đây nếu không lấy được breadcrumb
-                console.warn(`Failed to fetch breadcrumb for ${copiedCategory.categoryId}`);
+                return [];
             });
 
-            lastSlugRequestRef.current.inProgress = false;
-            return copiedCategory;
-        } catch (error) {
-            lastSlugRequestRef.current.inProgress = false;
-            const errorMessage = error instanceof Error ? error.message : `Failed to fetch category by slug ${slug}`;
-            console.error(`Category slug ${slug} fetch error:`, error);
-            dispatch(fetchFailure(errorMessage));
+        // Store the pending request
+        pendingRequestsRef.current[requestKey] = requestPromise;
 
-            // Trả về danh mục mặc định thay vì throw error
-            const defaultCategory = createDefaultCategory(0, slug);
-            dispatch(fetchCategoryDetailSuccess(defaultCategory));
-            return defaultCategory;
-        }
-    }, [dispatch, selectedCategory, getCategoryWithSubcategories, createDefaultCategory]);
+        return requestPromise;
+    }, [activeParentCategories, dispatch]);
 
     /**
      * Get subcategories by parent ID
      */
-    const getSubcategoriesByParent = useCallback(async (parentId: number) => {
-        // Kiểm tra xem đã có subcategories cho parent này chưa
+    const getSubcategoriesByParent = useCallback(async (parentId: number): Promise<CategoryResponseDTO[]> => {
+        const requestKey = `subcategories_${parentId}`;
+
+        // Check if there's a pending request
+        const pendingRequest = pendingRequestsRef.current[requestKey];
+        if (pendingRequest) {
+            console.log(`Reusing pending subcategories request for parent ${parentId}`);
+            return pendingRequest as Promise<CategoryResponseDTO[]>;
+        }
+
+        // Check if we already have subcategories for this parent
         const existingSubcategories = subCategories?.filter(c => c.parentId === parentId);
         if (existingSubcategories && existingSubcategories.length > 0) {
-            // Trả về bản sao
             return existingSubcategories.map(category => ({ ...category }));
         }
 
         dispatch(fetchStart());
-        try {
-            const response = await BrandCategoryService.getActiveSubCategories(parentId);
 
-            // Kiểm tra phản hồi
-            if (!Array.isArray(response)) {
-                console.warn(`Invalid subcategories response for parent ID ${parentId}`);
-                dispatch(fetchSubCategoriesSuccess([]));
+        // Create and store the promise
+        const requestPromise = BrandCategoryService.getActiveSubCategories(parentId)
+            .then(response => {
+                // Validation
+                if (!Array.isArray(response)) {
+                    console.warn(`Invalid subcategories response for parent ID ${parentId}`);
+                    dispatch(fetchSubCategoriesSuccess([]));
+                    return [];
+                }
+
+                // Create deep copies
+                const copiedResponse = response.map(category => ({ ...category }));
+                dispatch(fetchSubCategoriesSuccess(copiedResponse));
+
+                // Clean up
+                delete pendingRequestsRef.current[requestKey];
+
+                return copiedResponse;
+            })
+            .catch(err => {
+                delete pendingRequestsRef.current[requestKey];
+
+                const errorMessage = err instanceof Error ? err.message : `Failed to fetch subcategories for parent ${parentId}`;
+                console.error(`Subcategories for parent ${parentId} fetch error:`, err);
+                dispatch(fetchFailure(errorMessage));
+
                 return [];
-            }
+            });
 
-            // Tạo bản sao
-            const copiedResponse = response.map(category => ({ ...category }));
-            dispatch(fetchSubCategoriesSuccess(copiedResponse));
-            return copiedResponse;
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : `Failed to fetch subcategories for parent ${parentId}`;
-            console.error(`Subcategories for parent ${parentId} fetch error:`, error);
-            dispatch(fetchFailure(errorMessage));
+        // Store the pending request
+        pendingRequestsRef.current[requestKey] = requestPromise;
 
-            // Trả về mảng rỗng thay vì throw error
-            return [];
-        }
+        return requestPromise;
     }, [subCategories, dispatch]);
-
-    /**
-     * Get category breadcrumb
-     */
-    const getCategoryBreadcrumb = useCallback(async (categoryId: number) => {
-        // Nếu đã có breadcrumb cho danh mục này, trả về từ cache
-        if (categoryBreadcrumb && categoryBreadcrumb.length > 0 &&
-            categoryBreadcrumb[categoryBreadcrumb.length - 1].categoryId === categoryId) {
-            // Trả về bản sao
-            return categoryBreadcrumb.map(category => ({ ...category }));
-        }
-
-        try {
-            const response = await BrandCategoryService.getCategoryBreadcrumb(categoryId);
-
-            // Kiểm tra phản hồi
-            if (!Array.isArray(response)) {
-                console.warn(`Invalid breadcrumb response for category ID ${categoryId}`);
-                return [];
-            }
-
-            // Tạo bản sao
-            const copiedResponse = response.map(category => ({ ...category }));
-            dispatch(fetchCategoryBreadcrumbSuccess(copiedResponse));
-            return copiedResponse;
-        } catch (error) {
-            console.error(`Failed to fetch breadcrumb for category ${categoryId}:`, error);
-            // Không đưa vào failure vì breadcrumb không quan trọng
-            return [];
-        }
-    }, [categoryBreadcrumb, dispatch]);
 
     /**
      * Load initial data for the application
      */
     const loadInitialData = useCallback(async () => {
+        const requestKey = 'initial_data';
+
+        // Check if there's a pending request
+        const pendingRequest = pendingRequestsRef.current[requestKey];
+        if (pendingRequest) {
+            console.log('Reusing pending initial data request');
+            return pendingRequest as InitialDataPromise;
+        }
+
         try {
             dispatch(fetchStart());
 
-            // Kiểm tra xem đã có dữ liệu chưa trước khi gọi API
+            // Check if we already have data
             const needCategories = !activeParentCategories || activeParentCategories.length === 0;
             const needBrands = !activeBrands || activeBrands.length === 0;
 
             if (!needCategories && !needBrands) {
                 console.log('Using cached initial data');
                 return {
-                    // Trả về bản sao
                     categories: activeParentCategories.map(category => ({ ...category })),
                     brands: activeBrands.map(brand => ({ ...brand }))
                 };
             }
 
-            try {
-                // Lấy cả danh mục và thương hiệu song song
-                const [categoriesResponse, brandsResponse] = await Promise.all([
-                    needCategories ? BrandCategoryService.getAllActiveParentCategories() : activeParentCategories,
-                    needBrands ? BrandCategoryService.getActiveBrands() : activeBrands
-                ]);
+            // Create and store the promise
+            const requestPromise = Promise.all([
+                needCategories ? BrandCategoryService.getAllActiveParentCategories() : activeParentCategories,
+                needBrands ? BrandCategoryService.getActiveBrands() : activeBrands
+            ])
+                .then(([categoriesResponse, brandsResponse]) => {
+                    // Validate responses
+                    const categories = Array.isArray(categoriesResponse) ? categoriesResponse : [];
+                    const brands = Array.isArray(brandsResponse) ? brandsResponse : [];
 
-                // Kiểm tra phản hồi danh mục
-                const categories = Array.isArray(categoriesResponse) ? categoriesResponse : [];
+                    console.log(`Loaded initial data: ${categories.length} categories, ${brands.length} brands`);
 
-                // Kiểm tra phản hồi thương hiệu
-                const brands = Array.isArray(brandsResponse) ? brandsResponse : [];
+                    // Create deep copies
+                    const copiedCategories = categories.map(category => ({ ...category }));
+                    const copiedBrands = brands.map(brand => ({ ...brand }));
 
-                // Log kết quả
-                console.log(`Loaded initial data: ${categories.length} categories, ${brands.length} brands`);
+                    if (needCategories) {
+                        dispatch(fetchParentCategoriesSuccess(copiedCategories));
+                    }
 
-                // Tạo bản sao
-                const copiedCategories = categories.map(category => ({ ...category }));
-                const copiedBrands = brands.map(brand => ({ ...brand }));
+                    if (needBrands) {
+                        dispatch(fetchBrandsSuccess(copiedBrands));
+                    }
 
-                if (needCategories) {
-                    dispatch(fetchParentCategoriesSuccess(copiedCategories));
-                }
+                    // Clean up
+                    delete pendingRequestsRef.current[requestKey];
 
-                if (needBrands) {
-                    dispatch(fetchBrandsSuccess(copiedBrands));
-                }
+                    return { categories: copiedCategories, brands: copiedBrands };
+                })
+                .catch(err => {
+                    delete pendingRequestsRef.current[requestKey];
 
-                return { categories: copiedCategories, brands: copiedBrands };
-            } catch (innerError) {
-                console.error('Error during data fetch:', innerError);
+                    console.error('Error during initial data fetch:', err);
 
-                // Trả về dữ liệu mặc định khi có lỗi
-                const emptyCategories: CategoryResponseDTO[] = [];
-                const emptyBrands: BrandResponseDTO[] = [];
+                    // Return default empty structures
+                    const emptyCategories: CategoryResponseDTO[] = [];
+                    const emptyBrands: BrandResponseDTO[] = [];
 
-                if (needCategories) {
-                    dispatch(fetchParentCategoriesSuccess(emptyCategories));
-                }
+                    if (needCategories) {
+                        dispatch(fetchParentCategoriesSuccess(emptyCategories));
+                    }
 
-                if (needBrands) {
-                    dispatch(fetchBrandsSuccess(emptyBrands));
-                }
+                    if (needBrands) {
+                        dispatch(fetchBrandsSuccess(emptyBrands));
+                    }
 
-                return { categories: emptyCategories, brands: emptyBrands };
-            }
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Failed to load initial data';
-            console.error('Initial data load error:', error);
+                    return { categories: emptyCategories, brands: emptyBrands };
+                });
+
+            // Store the pending request
+            pendingRequestsRef.current[requestKey] = requestPromise;
+
+            return requestPromise;
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'Failed to load initial data';
+            console.error('Initial data load error:', err);
             dispatch(fetchFailure(errorMessage));
 
-            // Trả về dữ liệu rỗng thay vì throw error
+            // Return empty data instead of throwing
             return {
                 categories: [],
                 brands: []
@@ -739,7 +1106,7 @@ const useBrandCategory = () => {
         }
     }, [activeParentCategories, activeBrands, dispatch]);
 
-    // Filter update functions - không cần thay đổi
+    // Filter update functions
     const updateBrandSearchTerm = useCallback((term: string) => {
         dispatch(setBrandSearchTerm(term));
     }, [dispatch]);
@@ -771,6 +1138,19 @@ const useBrandCategory = () => {
     const resetSelectedCategory = useCallback(() => {
         dispatch(clearSelectedCategory());
     }, [dispatch]);
+
+    // Cleanup on component unmount - fixed the exhaustive deps warning
+    useEffect(() => {
+        // Capture the current reference to avoid stale value issues in cleanup
+        const currentPendingRequests = pendingRequestsRef.current;
+
+        return () => {
+            // Clear any pending requests using the captured reference
+            Object.keys(currentPendingRequests).forEach(key => {
+                delete currentPendingRequests[key];
+            });
+        };
+    }, []);
 
     return {
         // Brand data
