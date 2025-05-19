@@ -4,6 +4,7 @@ import Header from '../components/common/Header';
 import Footer from '../components/common/Footer';
 import { Toaster } from 'react-hot-toast';
 import { AnimatePresence, motion, Variants } from 'framer-motion';
+import ImageSearchWidget from '../components/common/ImageSearchWidget';
 
 // Initialize theme from localStorage, system preference, or default
 const initializeTheme = () => {
@@ -715,6 +716,9 @@ const MainLayout = () => {
 
                     {/* Enhanced Scroll to top button with cherry blossom animations */}
                     <ScrollToTopButton isDarkMode={isDarkMode} />
+
+                    {/* Image Search Widget */}
+                    <ImageSearchWidget isDarkMode={isDarkMode} />
                 </div>
             )}
         </>
